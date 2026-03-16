@@ -12,7 +12,7 @@ dist
 dist-ssr
 *.local
 
-data/database.sqlite
+backend/data/*
 
 # Editor directories and files
 .vscode/*
