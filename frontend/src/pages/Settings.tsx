@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { Save, CheckCircle, Info, Globe, Plus, Trash2, Play, Loader2 } from 'lucide-react';
+import { Save, CheckCircle, Info, Globe, Plus, Trash2, Play, Loader2, Cpu } from 'lucide-react';
 import api from '../utils/api';
+import CustomDropdown from './components/CustomDropdown';
 
 export default function Settings() {
     const [providers, setProviders] = useState<any[]>([]);
@@ -24,6 +25,7 @@ export default function Settings() {
     const [editName, setEditName] = useState('');
     const [editDescription, setEditDescription] = useState('');
     const [editInterval, setEditInterval] = useState(1);
+    const [isOllamaDropdownOpen, setIsOllamaDropdownOpen] = useState(false);
 
     useEffect(() => {
         fetchProviders();
@@ -227,15 +229,15 @@ export default function Settings() {
                                         <label className="text-xs text-muted">Default Model Name</label>
                                         {p.provider_id === 'ollama' ? (
                                             <div className="flex gap-2 mt-1">
-                                                <select 
-                                                    data-testid="ollama-model-select"
-                                                    className="input-field text-sm w-full" 
-                                                    value={state.default_model || ''} 
-                                                    onChange={e => handleInputChange(p.provider_id, 'default_model', e.target.value)} 
-                                                >
-                                                    <option value="">Select a model</option>
-                                                    {ollamaModels.map(m => <option key={m} value={m}>{m}</option>)}
-                                                </select>
+                                                <CustomDropdown 
+                                                    items={ollamaModels.map(m => ({ id: m, title: m }))} 
+                                                    selectedId={state.default_model || ''} 
+                                                    onSelect={val => handleInputChange(p.provider_id, 'default_model', val)} 
+                                                    isOpen={isOllamaDropdownOpen} 
+                                                    setIsOpen={setIsOllamaDropdownOpen} 
+                                                    placeholder="Select a model"
+                                                    icon={<Cpu size={16} className="text-accent-secondary" />}
+                                                />
                                                 {ollamaModels.length === 0 && <span className="text-xs text-warning flex items-center">Offline</span>}
                                             </div>
                                         ) : (

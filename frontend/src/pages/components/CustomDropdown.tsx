@@ -1,11 +1,14 @@
-import { FileText, ChevronDown } from 'lucide-react';
+import React from 'react';
+import { ChevronDown, FileText } from 'lucide-react';
 
 interface CustomDropdownProps {
-    items: any[];
+    items: { id: string; title: string }[];
     selectedId: string;
     onSelect: (id: string) => void;
     isOpen: boolean;
     setIsOpen: (open: boolean) => void;
+    placeholder?: string;
+    icon?: React.ReactNode;
 }
 
 export default function CustomDropdown({
@@ -14,6 +17,8 @@ export default function CustomDropdown({
     onSelect,
     isOpen,
     setIsOpen,
+    placeholder = 'Select',
+    icon
 }: CustomDropdownProps) {
     const selectedItem = items.find(i => i.id.toString() === selectedId);
 
@@ -23,8 +28,8 @@ export default function CustomDropdown({
                 className="flex items-center gap-2 bg-black/40 border border-white/10 hover:border-white/20 px-3 py-1.5 rounded-lg text-sm transition-all focus:outline-none backdrop-blur-md" 
                 onClick={() => setIsOpen(!isOpen)}
             >
-                <FileText size={16} className="text-accent-secondary" />
-                <span>{selectedItem ? selectedItem.title : 'Select CV'}</span>
+                {icon || <FileText size={16} className="text-accent-secondary" />}
+                <span>{selectedItem ? selectedItem.title : placeholder}</span>
                 <ChevronDown size={16} className={`transition-transform duration-300 ${isOpen ? 'rotate-180' : ''}`} />
             </button>
 
@@ -36,7 +41,7 @@ export default function CustomDropdown({
                             className={`flex items-center gap-2 w-full text-left px-3 py-2 text-sm hover:bg-white/5 rounded-md transition-all ${r.id.toString() === selectedId ? 'text-accent-primary bg-white/5' : 'text-secondary hover:text-white'}`} 
                             onClick={() => { onSelect(r.id.toString()); setIsOpen(false); }}
                         >
-                            <FileText size={14} className="text-secondary" />
+                            {icon || <FileText size={14} className="text-secondary" />}
                             <span>{r.title}</span>
                         </button>
                     ))}

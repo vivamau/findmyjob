@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
-import { UploadCloud, FileText, Edit3, Trash2, Plus, ArrowRight, Loader2, GraduationCap, Globe } from 'lucide-react';
 import api from '../utils/api';
+import CustomDropdown from './components/CustomDropdown';
+import { UploadCloud, FileText, Edit3, Trash2, Plus, ArrowRight, Loader2, GraduationCap, Globe, Cpu } from 'lucide-react';
 
 const formatDate = (dateString: string, includeTime = false) => {
     if (!dateString) return '';
@@ -41,6 +42,7 @@ export default function CVManager() {
 
   const [providers, setProviders] = useState<any[]>([]);
   const [selectedModel, setSelectedModel] = useState<string>('');
+  const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false);
   const [cvToDelete, setCvToDelete] = useState<number | null>(null);
 
   // Edit Inline States
@@ -234,17 +236,15 @@ export default function CVManager() {
           {providers.length > 0 && (
             <div className="mt-2 flex items-center gap-2">
               <span className="text-xs text-secondary">AI Model:</span>
-              <select 
-                value={selectedModel} 
-                onChange={(e) => setSelectedModel(e.target.value)}
-                className="bg-white/5 border border-white/10 rounded text-xs p-1 text-white"
-              >
-                {providers.map((p) => (
-                    <option key={p.provider_id} value={`${p.provider_id}|${p.default_model}`}>
-                        {p.provider_id} ({p.default_model})
-                    </option>
-                ))}
-              </select>
+              <CustomDropdown 
+                items={providers.map((p: any) => ({ id: `${p.provider_id}|${p.default_model}`, title: `${p.provider_id} (${p.default_model})` }))} 
+                selectedId={selectedModel} 
+                onSelect={setSelectedModel} 
+                isOpen={isModelDropdownOpen} 
+                setIsOpen={setIsModelDropdownOpen} 
+                icon={<Cpu size={16} className="text-accent-secondary" />}
+                placeholder="Select Model"
+              />
             </div>
           )}
         </div>
