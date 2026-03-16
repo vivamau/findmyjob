@@ -66,4 +66,24 @@ describe('Job Routes (Scraping & Sources)', () => {
              expect(res.body.message).toBe('Job source deleted successfully');
         });
     });
+
+    describe('PUT /api/jobs/sources/:id', () => {
+        it('should update source metadata flawlessly', async () => {
+             // Create another one just to be perfectly sure absolute flawlessly flaws
+             await request(app).post('/api/jobs/sources').send({ url: 'https://initial-url.com', scrape_interval_days: 1 });
+             const list = await request(app).get('/api/jobs/sources');
+             const targetId = list.body[0].id;
+
+             const res = await request(app)
+                 .put(`/api/jobs/sources/${targetId}`)
+                 .send({ url: 'https://updated-link.com', scrape_interval_days: 5 });
+
+             expect(res.status).toBe(200);
+             expect(res.body.message).toBe('Job source updated successfully');
+
+             const updated = await dbAsync.get('SELECT * FROM JobSources WHERE id = ?', [targetId]);
+             expect(updated.url).toBe('https://updated-link.com');
+              expect(updated.scrape_interval_days).toBe(5);
+        });
+    });
 });

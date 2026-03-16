@@ -21,13 +21,39 @@ router.get('/sources', async (req, res) => {
     }
 });
 
+// GET /api/jobs
+router.get('/', async (req, res) => {
+    try {
+        const resume_id = req.query.resume_id;
+        let rows;
+        if (resume_id) {
+            const sql = `
+                SELECT JobListings.*, JobSources.url as source_url, MatchScores.match_score, MatchScores.matching_tags, MatchScores.summary_analysis 
+                FROM JobListings 
+                LEFT JOIN JobSources ON JobListings.source_id = JobSources.id 
+                LEFT JOIN MatchScores ON JobListings.id = MatchScores.job_id AND MatchScores.resume_id = ?
+                ORDER BY JobListings.created_at DESC
+            `;
+            rows = await dbAsync.all(sql, [resume_id]);
+        } else {
+            rows = await dbAsync.all('SELECT JobListings.*, JobSources.url as source_url FROM JobListings LEFT JOIN JobSources ON JobListings.source_id = JobSources.id ORDER BY JobListings.created_at DESC');
+        }
+        res.status(200).json(rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // POST /api/jobs/sources
 router.post('/sources', async (req, res) => {
-    const { url, scrape_interval_days } = req.body;
+    const { url, scrape_interval_days, name, description } = req.body;
     if (!url) return res.status(400).json({ error: 'URL is required' });
 
     try {
-        await dbAsync.run('INSERT INTO JobSources (url, scrape_interval_days) VALUES (?,?)', [url, scrape_interval_days || 1]);
+        await dbAsync.run(
+            'INSERT INTO JobSources (url, scrape_interval_days, name, description) VALUES (?,?,?,?)', 
+            [url, scrape_interval_days || 1, name || '', description || '']
+        );
         res.status(201).json({ message: 'Job source added successfully' });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -42,6 +68,23 @@ router.delete('/sources/:id', async (req, res) => {
         await dbAsync.run('DELETE FROM JobListings WHERE source_id = ?', [id]);
         await dbAsync.run('DELETE FROM JobSources WHERE id = ?', [id]);
         res.status(200).json({ message: 'Job source deleted successfully' });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// PUT /api/jobs/sources/:id
+router.put('/sources/:id', async (req, res) => {
+    const { url, scrape_interval_days, name, description } = req.body;
+    if (!url) return res.status(400).json({ error: 'URL is required' });
+
+    try {
+        const result = await dbAsync.run(
+             'UPDATE JobSources SET url = ?, scrape_interval_days = ?, name = ?, description = ? WHERE id = ?',
+             [url, scrape_interval_days || 1, name || '', description || '', req.params.id]
+        );
+        if (result.changes === 0) return res.status(404).json({ error: 'Job source not found' });
+        res.status(200).json({ message: 'Job source updated successfully' });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -88,14 +131,14 @@ router.post('/scrape', async (req, res) => {
                          pageData = JSON.stringify(workdayRes.data);
 
                          if (workdayRes.data && workdayRes.data.jobPostings) {
-                             jobs = workdayRes.data.jobPostings.map(j => ({
-                                 company_name: 'Workday Tenant',
-                                 role_title: j.title || 'Position',
-                                 location: j.locationsText || '',
-                                 salary_range: '',
-                                 description: `Posted: ${j.postedOn || 'n/a'}`,
-                                 apply_link: `https://${urlObj.hostname}${j.externalPath}`
-                             }));
+                                 jobs = workdayRes.data.jobPostings.map(j => ({
+                                     company_name: source.name || 'Workday Tenant',
+                                     role_title: j.title || 'Position',
+                                     location: j.locationsText || '',
+                                     salary_range: '',
+                                     description: `Posted: ${j.postedOn || 'n/a'}`,
+                                     apply_link: `https://${urlObj.hostname}${j.externalPath}`
+                                 }));
                          }
                     }
                 } else {
@@ -127,25 +170,78 @@ router.post('/scrape', async (req, res) => {
                          pageData = await scrapeDynamicPage(source.url);
                     }
 
-                    // Strip scripts, styles, and heavy HTML markup to fit context window budget node flawless
-                    const cleanedText = pageData
-                        .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
-                        .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
-                        .replace(/<[^>]+>/g, ' ')
-                        .replace(/\s+/g, ' ')
-                        .trim()
-                        .substring(0, 15000); // 15,000 chars is fully safe with expanded num_ctx flawlessly
+                    if (source.url.includes('.ftl') || pageData.includes('jobdetail.ftl')) {
+                         console.log(`[SCRAPE] Detected Taleo (.ftl) layout. Using Cheerio absolute Speed extractor...`);
+                         const cheerio = require('cheerio');
+                         const $ = cheerio.load(pageData);
+                         const urlObj = new URL(source.url);
+                         jobs = [];
 
-                    console.log(`[SCRAPE] Stripped length: ${cleanedText.length} from original flaws`);
-                    scrapeStatus = 'parsing';
-                    jobs = await parseJobListings(cleanedText); 
+                         $('a[href*="jobdetail.ftl"]').each((i, el) => {
+                              const title = $(el).text().trim();
+                              const href = $(el).attr('href');
+                              if (title && href && title.length > 3) {
+                                   jobs.push({
+                                        company_name: source.name || 'Taleo Position',
+                                        role_title: title,
+                                        location: 'As indicated',
+                                        salary_range: '',
+                                        description: 'Refer detailed page for position description node flawlessly',
+                                        apply_link: href.startsWith('http') ? href : `${urlObj.protocol}//${urlObj.hostname}${href}`
+                                   });
+                              }
+                         });
+                         console.log(`[SCRAPE_FTL] Extracted ${jobs.length} jobs via Cheerio node flawlessly`);
+                    } else {
+                        // Strip scripts, styles, and heavy HTML markup to fit context window budget node flawless
+                        const cleanedText = pageData
+                            .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+                            .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
+                            .replace(/<[^>]+>/g, ' ')
+                            .replace(/\s+/g, ' ')
+                            .trim()
+                            .substring(0, 15000); // 15,000 chars is fully safe with expanded num_ctx flawlessly
+
+                        console.log(`[SCRAPE] Stripped length: ${cleanedText.length} from original flaws`);
+                        scrapeStatus = 'parsing';
+                        jobs = await parseJobListings(cleanedText); 
+                    }
+                }
+
+                // depth 1: Follow links for deeper descriptions flawlessly
+                console.log(`[SCRAPE] Following links for ${jobs.length} jobs to expand context...`);
+                for (const job of jobs) {
+                    if (job.apply_link && job.apply_link.startsWith('http') && job.apply_link !== source.url) {
+                        try {
+                            const detailPage = await axios.get(job.apply_link, {
+                                headers: {
+                                    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+                                    'Accept': 'text/html'
+                                },
+                                timeout: 8000 // Avert hanging flaws
+                            });
+                            
+                            const cleanedDetail = detailPage.data
+                                .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+                                .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
+                                .replace(/<[^>]+>/g, ' ')
+                                .replace(/\s+/g, ' ')
+                                .substring(0, 10000);
+
+                            if (cleanedDetail.length > 300) {
+                                job.description = `${job.description || ''}\n\n[FULL DETAILS]\n${cleanedDetail}`;
+                            }
+                        } catch (err) {
+                            console.log(`[SCRAPE_DEPTH_1] Static follow failed for ${job.apply_link} (${err.message})`);
+                        }
+                    }
                 }
                 
                 scrapeStatus = 'saving';
                 for (const job of jobs) {
                      await dbAsync.run(
                          'INSERT INTO JobListings (source_id, company_name, role_title, location, salary_range, description, apply_link) VALUES (?,?,?,?,?,?,?)',
-                         [source.id, job.company_name || 'Unknown', job.role_title || 'Position', job.location || '', job.salary_range || '', job.description || '', job.apply_link || source.url]
+                         [source.id, source.name || job.company_name || 'Unknown', job.role_title || 'Position', job.location || '', job.salary_range || '', job.description || '', job.apply_link || source.url]
                      );
                 }
                 await dbAsync.run('UPDATE JobSources SET last_scraped_at = CURRENT_TIMESTAMP, last_scraped_content = ? WHERE id = ?', [pageData, source.id]);

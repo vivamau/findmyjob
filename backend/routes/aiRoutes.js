@@ -30,4 +30,44 @@ router.put('/providers/:id', async (req, res) => {
     }
 });
 
+// POST /api/ai/match
+router.post('/match', async (req, res) => {
+    const { resume_id, job_id } = req.body;
+    if (!resume_id || !job_id) return res.status(400).json({ error: 'resume_id and job_id are required' });
+
+    try {
+        const { matchCvWithJob } = require('../services/aiService');
+        const { dbAsync } = require('../db');
+
+        const cached = await dbAsync.get('SELECT * FROM MatchScores WHERE resume_id = ? AND job_id = ?', [resume_id, job_id]);
+        if (cached) {
+            return res.status(200).json({
+                match_score: cached.match_score,
+                matching_tags: JSON.parse(cached.matching_tags || '[]'),
+                summary_analysis: cached.summary_analysis
+            });
+        }
+
+        const cv = await dbAsync.get('SELECT id, title FROM Resumes WHERE id = ?', [resume_id]);
+        const exps = await dbAsync.all('SELECT * FROM Experiences WHERE resume_id = ?', [resume_id]);
+        const edus = await dbAsync.all('SELECT * FROM Educations WHERE resume_id = ?', [resume_id]);
+        const langs = await dbAsync.all('SELECT * FROM Languages WHERE resume_id = ?', [resume_id]);
+
+        const job = await dbAsync.get('SELECT * FROM JobListings WHERE id = ?', [job_id]);
+
+        if (!cv || !job) return res.status(404).json({ error: 'CV or Job not found' });
+
+        const result = await matchCvWithJob({ ...cv, experiences: exps, educations: edus, languages: langs }, job);
+
+        await dbAsync.run(
+             'INSERT OR REPLACE INTO MatchScores (resume_id, job_id, match_score, matching_tags, summary_analysis) VALUES (?, ?, ?, ?, ?)',
+             [resume_id, job_id, result.match_score, JSON.stringify(result.matching_tags), result.summary_analysis]
+        );
+
+        res.status(200).json({ ...result, resume_id, job_id });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 module.exports = router;

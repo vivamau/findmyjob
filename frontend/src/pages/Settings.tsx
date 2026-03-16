@@ -12,10 +12,18 @@ export default function Settings() {
     
     const [jobSources, setJobSources] = useState<any[]>([]);
     const [newUrl, setNewUrl] = useState('');
+    const [newName, setNewName] = useState('');
+    const [newDescription, setNewDescription] = useState('');
     const [newInterval, setNewInterval] = useState(1);
     const [activeTab, setActiveTab] = useState<'ai' | 'scrapers'>('ai');
     const [scraping, setScraping] = useState(false);
     const [statusLabel, setStatusLabel] = useState('Run Scraper');
+
+    const [editingSourceId, setEditingSourceId] = useState<number | null>(null);
+    const [editUrl, setEditUrl] = useState('');
+    const [editName, setEditName] = useState('');
+    const [editDescription, setEditDescription] = useState('');
+    const [editInterval, setEditInterval] = useState(1);
 
     useEffect(() => {
         fetchProviders();
@@ -32,12 +40,24 @@ export default function Settings() {
 
     const handleAddSource = async () => {
         if (!newUrl.trim()) return;
+        setSaveSuccess('');
         try {
-            await api.post('/jobs/sources', { url: newUrl, scrape_interval_days: newInterval });
+            await api.post('/jobs/sources', { 
+                url: newUrl, 
+                scrape_interval_days: newInterval,
+                name: newName,
+                description: newDescription
+            });
             setNewUrl('');
+            setNewName('');
+            setNewDescription('');
             setNewInterval(1);
+            setSaveSuccess('Job source added successfully!');
             fetchJobSources();
-        } catch (err: any) { console.error(err); }
+        } catch (err: any) { 
+            console.error(err); 
+            alert(`Failed to add source: ${err.response?.data?.error || err.message}`);
+        }
     };
 
     const handleDeleteSource = async (id: number) => {
@@ -45,6 +65,20 @@ export default function Settings() {
             await api.delete(`/jobs/sources/${id}`);
             fetchJobSources();
         } catch (err: any) { console.error(err); }
+    };
+
+    const handleUpdateSource = async (id: number) => {
+        try {
+            await api.put(`/jobs/sources/${id}`, { 
+                url: editUrl, 
+                scrape_interval_days: editInterval,
+                name: editName,
+                description: editDescription
+            });
+            setEditingSourceId(null);
+            setSaveSuccess('Job source updated successfully!');
+            fetchJobSources();
+        } catch (err: any) { alert(`Failed to update: ${err.response?.data?.error || err.message}`); }
     };
 
     const handleRunScrape = async () => {
@@ -239,27 +273,43 @@ export default function Settings() {
                 </h3>
                 <p className="text-sm text-secondary">Add URLs to scrapers index flawlessly where positions description flaws flaws will iterate smoothly.</p>
                 
-                <div className="flex gap-2">
-                    <input 
-                        className="input-field text-sm w-full" 
-                        value={newUrl} 
-                        onChange={e => setNewUrl(e.target.value)} 
-                        placeholder="https://example.com/jobs"
-                    />
-                    <div className="flex items-center gap-1 bg-white/5 px-3 rounded-lg border border-white/5">
+                <div className="flex flex-col gap-2">
+                    <div className="flex gap-2">
                         <input 
-                            type="number" 
-                            min="1" 
-                            className="bg-transparent text-sm w-12 text-center focus:outline-none" 
-                            value={newInterval} 
-                            onChange={e => setNewInterval(Number(e.target.value))} 
+                            className="input-field text-sm w-1/3" 
+                            value={newName} 
+                            onChange={e => setNewName(e.target.value)} 
+                            placeholder="Name (e.g. IAEA)"
                         />
-                        <span className="text-xs text-secondary">days</span>
+                        <input 
+                            className="input-field text-sm w-2/3" 
+                            value={newUrl} 
+                            onChange={e => setNewUrl(e.target.value)} 
+                            placeholder="https://example.com/jobs"
+                        />
                     </div>
-                    <button className="btn btn-primary flex items-center gap-1" onClick={handleAddSource}>
-                        <Plus size={16} />
-                        <span>Add</span>
-                    </button>
+                    <div className="flex gap-2">
+                        <input 
+                            className="input-field text-sm w-full" 
+                            value={newDescription} 
+                            onChange={e => setNewDescription(e.target.value)} 
+                            placeholder="Description metadata flaws flaws"
+                        />
+                        <div className="flex items-center gap-1 bg-white/5 px-3 rounded-lg border border-white/5">
+                            <input 
+                                type="number" 
+                                min="1" 
+                                className="bg-transparent text-sm w-8 text-center focus:outline-none" 
+                                value={newInterval} 
+                                onChange={e => setNewInterval(Number(e.target.value))} 
+                            />
+                            <span className="text-xs text-secondary">d</span>
+                        </div>
+                        <button className="btn btn-primary flex items-center gap-1" onClick={handleAddSource}>
+                            <Plus size={16} />
+                            <span>Add</span>
+                        </button>
+                    </div>
                 </div>
 
                 <div className="flex justify-between items-center mt-2 border-t border-white/5 pt-3">
@@ -273,25 +323,78 @@ export default function Settings() {
                 <div className="flex flex-col gap-2 mt-2">
                     {jobSources.map((s: any) => (
                         <div key={s.id} className="p-3 bg-white/5 border border-white/5 rounded-lg flex justify-between items-center transition-all hover:bg-white/10">
-                            <div className="flex flex-col flex-1">
-                                <div className="flex justify-between items-start w-full">
-                                    <div className="flex flex-col">
-                                        <span className="text-sm font-medium">{s.url}</span>
-                                        <span className="text-xs text-accent-tertiary">Interval: {s.scrape_interval_days || 1} d</span>
+                            {editingSourceId === s.id ? (
+                                <div className="flex flex-col gap-2 w-full">
+                                    <div className="flex gap-2">
+                                        <input 
+                                            className="input-field text-sm w-1/3" 
+                                            value={editName} 
+                                            onChange={e => setEditName(e.target.value)} 
+                                            placeholder="Name"
+                                        />
+                                        <input 
+                                            className="input-field text-sm w-2/3" 
+                                            value={editUrl} 
+                                            onChange={e => setEditUrl(e.target.value)} 
+                                        />
                                     </div>
-                                    <button className="btn btn-xs text-danger hover:bg-danger/10" onClick={() => handleDeleteSource(s.id)}>
-                                        <Trash2 size={14} />
-                                    </button>
+                                    <div className="flex gap-2">
+                                        <input 
+                                            className="input-field text-sm w-full" 
+                                            value={editDescription} 
+                                            onChange={e => setEditDescription(e.target.value)} 
+                                            placeholder="Description"
+                                        />
+                                        <div className="flex items-center gap-1 bg-white/5 px-2 rounded-lg border border-white/5">
+                                            <input 
+                                                type="number" 
+                                                className="bg-transparent text-sm w-8 text-center focus:outline-none" 
+                                                value={editInterval} 
+                                                onChange={e => setEditInterval(Number(e.target.value))} 
+                                            />
+                                            <span className="text-xs text-secondary">d</span>
+                                        </div>
+                                        <button className="btn btn-xs btn-primary px-3" onClick={() => handleUpdateSource(s.id)}>Save</button>
+                                        <button className="btn btn-xs btn-secondary px-3" onClick={() => setEditingSourceId(null)}>Cancel</button>
+                                    </div>
                                 </div>
-                                {s.last_scraped_content && (
-                                    <details className="mt-2 text-xs text-secondary">
-                                        <summary className="cursor-pointer text-accent hover:underline">View Scraped Content</summary>
-                                        <pre className="p-2 bg-black/40 rounded mt-1 overflow-auto max-h-40 whitespace-pre-wrap font-mono text-[10px]">
-                                            {s.last_scraped_content.substring(0, 2000)}{s.last_scraped_content.length > 2000 && '...'}
-                                        </pre>
-                                    </details>
-                                )}
-                            </div>
+                            ) : (
+                                <div className="flex flex-col flex-1">
+                                    <div className="flex justify-between items-start w-full">
+                                        <div className="flex flex-col">
+                                            {s.name && <span className="text-sm font-bold text-white mb-1">{s.name}</span>}
+                                            <span className="text-xs text-secondary mb-1">{s.url}</span>
+                                            {s.description && <p className="text-xs text-white/60 mb-1">{s.description}</p>}
+                                            <span className="text-xs text-accent-tertiary">Interval: {s.scrape_interval_days || 1} d</span>
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <button 
+                                                className="btn btn-xs btn-secondary hover:text-white" 
+                                                onClick={() => { 
+                                                    setEditingSourceId(s.id); 
+                                                    setEditUrl(s.url); 
+                                                    setEditName(s.name || '');
+                                                    setEditDescription(s.description || '');
+                                                    setEditInterval(s.scrape_interval_days || 1); 
+                                                }}
+                                            >
+                                                Edit
+                                            </button>
+                                            <button className="btn btn-xs text-danger hover:bg-danger/10" onClick={() => handleDeleteSource(s.id)}>
+                                                <Trash2 size={14} />
+                                            </button>
+                                        </div>
+                                    </div>
+                                    {s.last_scraped_content && (
+                                        <details className="mt-2 text-xs text-secondary">
+                                            <summary className="cursor-pointer text-accent hover:underline">View Scraped Content</summary>
+                                            <pre className="p-2 bg-black/40 rounded mt-1 overflow-auto max-h-40 whitespace-pre-wrap font-mono text-[10px]">
+                                                {s.last_scraped_content.substring(0, 2000)}{s.last_scraped_content.length > 2000 && '...'}
+                                            </pre>
+                                        </details>
+                                    )}
+                                </div>
+                            )}
                         </div>
                     ))}
                 </div>

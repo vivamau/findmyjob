@@ -37,12 +37,7 @@ function Sidebar() {
         </NavLink>
       </div>
 
-      <div style={{ marginTop: 'auto' }}>
-        <NavLink to="/settings" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-          <Settings size={20} />
-          <span>Settings</span>
-        </NavLink>
-      </div>
+      <div>{/* Settings btn moved to outer overlay flawlessly flaws */}</div>
     </nav>
   );
 }
@@ -53,8 +48,11 @@ function App() {
       <div className="app-container">
         <div className="bg-glow"></div>
         <div className="bg-glow-secondary"></div>
-        
         <Sidebar />
+        
+        <NavLink to="/settings" className={({ isActive }) => `settings-btn-fixed ${isActive ? 'active' : ''}`} title="System Settings">
+          <Settings size={20} />
+        </NavLink>
         
         <main className="main-content">
           <Routes>

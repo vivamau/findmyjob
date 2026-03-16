@@ -230,6 +230,73 @@ async function parseCvWithModel(cvText, model, providerId = null) {
     }
 }
 
+/**
+ * Matches a Resume against a Job Description using AI.
+ */
+async function matchCvWithJob(cv, job, model) {
+    try {
+        const prompt = `You are an expert HR recruiter assistant. Match the Candidate CV details against the Job Description below.
+        
+        --- CANDIDATE CV ---
+        ${JSON.stringify(cv, null, 2)}
+        --- END OF CV ---
+
+        --- JOB DESCRIPTION ---
+        ${JSON.stringify(job, null, 2)}
+        --- END OF JOB ---
+
+        Calculate a compatibility fit Score (0 to 100).
+        Identify the skills or keywords present in the CV that match the Job requirements for tags.
+        Provide a concise 1-2 sentence analysis highlighting matches or missing gaps.
+
+        You MUST respond strictly as a Single JSON Object with keys:
+        {
+          "match_score": 85,
+          "matching_tags": ["React", "TypeScript"],
+          "summary_analysis": "Candidate is highly compatible with the tech stack but lacks explicit management experience."
+        }`;
+
+        const active = await dbAsync.get('SELECT * FROM ProviderConfigs WHERE is_active = 1');
+        const provider = active ? active.provider_id : 'ollama';
+        const apiKey = active ? active.api_key : '';
+        const selectedModel = model || (active && active.default_model) || 'llama3';
+
+        let responseText = '';
+        if (provider === 'ollama') {
+            const res = await axios.post(`http://localhost:11434/api/generate`, {
+                model: selectedModel,
+                prompt: prompt,
+                stream: false,
+                format: "json",
+                options: { temperature: 0.1 }
+            });
+            responseText = res.data.response;
+        } else if (provider === 'openai') {
+            const res = await axios.post('https://api.openai.com/v1/chat/completions', {
+                model: selectedModel,
+                messages: [{ role: 'user', content: prompt }],
+                response_format: { type: 'json_object' }
+            }, { headers: { 'Authorization': `Bearer ${apiKey}` } });
+            responseText = res.data.choices[0].message.content;
+        }
+
+        console.log(`=== RAW MATCH RESPONSE ===\n${responseText}`);
+        
+        const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+        const jsonString = jsonMatch ? jsonMatch[0] : responseText.trim();
+
+        const parsed = JSON.parse(jsonString);
+        return {
+            match_score: parsed.match_score || 0,
+            matching_tags: parsed.matching_tags || [],
+            summary_analysis: parsed.summary_analysis || 'No analysis available.'
+        };
+    } catch (err) {
+        console.error('CV Match failed:', err.message);
+        return { match_score: 0, matching_tags: [], summary_analysis: 'Failed to compute CV match.' };
+    }
+}
+
 async function getProviderConfigs() {
     return await dbAsync.all('SELECT * FROM ProviderConfigs');
 }
@@ -248,6 +315,7 @@ module.exports = {
     listModels,
     parseCvWithModel,
     parseJobListings,
+    matchCvWithJob,
     getProviderConfigs,
     updateProviderConfig
 };

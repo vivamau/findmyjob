@@ -103,3 +103,35 @@
   color: var(--text-secondary);
   font-size: 1.1rem;
 }
+
+.settings-btn-fixed {
+  position: fixed;
+  bottom: 24px;
+  left: 24px;
+  z-index: 50;
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--border-color);
+  backdrop-filter: blur(12px);
+  transition: all var(--transition-medium);
+}
+
+.settings-btn-fixed:hover {
+  transform: scale(1.05) rotate(15deg);
+  color: var(--accent-primary);
+  border-color: var(--accent-primary);
+}
+
+.settings-btn-fixed.active {
+  background: var(--grad-primary);
+  color: white;
+  border: none;
+  box-shadow: 0 4px 14px rgba(124, 58, 237, 0.4);
+}
