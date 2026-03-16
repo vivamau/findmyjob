@@ -1,0 +1,38 @@
+CREATE TABLE IF NOT EXISTS UserRoles (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    role_name TEXT UNIQUE NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS Users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    role_id INTEGER NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (role_id) REFERENCES UserRoles(id)
+);
+
+CREATE TABLE IF NOT EXISTS Resumes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    content TEXT NOT NULL,
+    is_primary BOOLEAN DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES Users(id)
+);
+
+CREATE TABLE IF NOT EXISTS Applications (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    resume_id INTEGER,
+    company_name TEXT NOT NULL,
+    role_title TEXT NOT NULL,
+    status TEXT NOT NULL, -- e.g. Applied, In Review, Interview, Rejected, Offer
+    applied_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    notes TEXT,
+    FOREIGN KEY (user_id) REFERENCES Users(id),
+    FOREIGN KEY (resume_id) REFERENCES Resumes(id)
+);
