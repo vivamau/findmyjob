@@ -16,7 +16,10 @@ export default function Settings() {
     const [newName, setNewName] = useState('');
     const [newDescription, setNewDescription] = useState('');
     const [newInterval, setNewInterval] = useState(1);
-    const [activeTab, setActiveTab] = useState<'ai' | 'scrapers'>('ai');
+    const [activeTab, setActiveTab] = useState<'ai' | 'scrapers' | 'prompts'>('ai');
+    const [prompts, setPrompts] = useState<any[]>([]);
+    const [editingPromptKey, setEditingPromptKey] = useState<string | null>(null);
+    const [editPromptText, setEditPromptText] = useState<string>('');
     const [scraping, setScraping] = useState(false);
     const [statusLabel, setStatusLabel] = useState('Run Scraper');
 
@@ -31,6 +34,7 @@ export default function Settings() {
         fetchProviders();
         fetchModels();
         fetchJobSources();
+        fetchPrompts();
     }, []);
 
     const fetchJobSources = async () => {
@@ -38,6 +42,25 @@ export default function Settings() {
             const res = await api.get('/jobs/sources');
             setJobSources(res.data);
         } catch (err) { console.error(err); }
+    };
+
+    const fetchPrompts = async () => {
+        try {
+            const res = await api.get('/ai/prompts');
+            setPrompts(res.data);
+        } catch (err) { console.error('Failed to load prompts:', err); }
+    };
+
+    const handleUpdatePrompt = async (key: string) => {
+        try {
+            await api.put(`/ai/prompts/${key}`, { prompt_text: editPromptText });
+            setEditingPromptKey(null);
+            setSaveSuccess('Prompt updated successfully!');
+            fetchPrompts();
+        } catch (err: any) { 
+            console.error(err); 
+            alert(`Failed to update prompt: ${err.response?.data?.error || err.message}`); 
+        }
     };
 
     const handleAddSource = async () => {
@@ -182,6 +205,12 @@ export default function Settings() {
                 >
                     <span>Job Scrapers</span>
                 </button>
+                <button 
+                    className={`py-2 px-4 rounded-md font-medium text-sm transition-all flex items-center gap-2 ${activeTab === 'prompts' ? 'bg-accent text-white shadow-lg font-semibold' : 'text-white/40 hover:text-white/80 hover:bg-white/5'}`}
+                    onClick={() => setActiveTab('prompts')}
+                >
+                    <span>AI Prompts</span>
+                </button>
             </div>
 
             {activeTab === 'ai' && (
@@ -228,7 +257,7 @@ export default function Settings() {
                                     <div>
                                         <label className="text-xs text-muted">Default Model Name</label>
                                         {p.provider_id === 'ollama' ? (
-                                            <div className="flex gap-2 mt-1">
+                                            <div className="flex gap-2 mt-1" data-testid="ollama-model-select">
                                                 <CustomDropdown 
                                                     items={ollamaModels.map(m => ({ id: m, title: m }))} 
                                                     selectedId={state.default_model || ''} 
@@ -361,14 +390,16 @@ export default function Settings() {
                                     </div>
                                 </div>
                             ) : (
-                                <div className="flex flex-col flex-1">
-                                    <div className="flex justify-between items-start w-full">
-                                        <div className="flex flex-col">
-                                            {s.name && <span className="text-sm font-bold text-white mb-1">{s.name}</span>}
-                                            <span className="text-xs text-secondary mb-1">{s.url}</span>
-                                            {s.description && <p className="text-xs text-white/60 mb-1">{s.description}</p>}
-                                            <span className="text-xs text-accent-tertiary">Interval: {s.scrape_interval_days || 1} d</span>
-                                        </div>
+                                 <div className="flex flex-col flex-1 min-w-0">
+                                     <div className="flex justify-between items-start w-full">
+                                         <div className="flex flex-col min-w-0 flex-1">
+                                             {s.name && <span className="text-sm font-bold text-white mb-1">{s.name}</span>}
+                                             <a href={s.url} target="_blank" rel="noreferrer" className="text-xs text-secondary mb-1 hover:underline hover:text-white transition-colors truncate block">
+                                                 {s.url}
+                                             </a>
+                                             {s.description && <p className="text-xs text-white/60 mb-1">{s.description}</p>}
+                                             <span className="text-xs text-accent-tertiary">Interval: {s.scrape_interval_days || 1} d</span>
+                                         </div>
                                         <div className="flex gap-2">
                                             <button 
                                                 className="btn btn-xs btn-secondary hover:text-white" 
@@ -382,7 +413,7 @@ export default function Settings() {
                                             >
                                                 Edit
                                             </button>
-                                            <button className="btn btn-xs text-danger hover:bg-danger/10" onClick={() => handleDeleteSource(s.id)}>
+                                            <button aria-label="Delete source" className="btn btn-xs text-danger hover:bg-danger/10" onClick={() => handleDeleteSource(s.id)}>
                                                 <Trash2 size={14} />
                                             </button>
                                         </div>
@@ -400,6 +431,58 @@ export default function Settings() {
                         </div>
                     ))}
                 </div>
+                </div>
+            )}
+
+            {activeTab === 'prompts' && (
+                <div className="glass-panel p-6 flex flex-col gap-4">
+                    <h3 className="text-xl font-bold text-gradient flex items-center gap-2">
+                         <Save size={20} className="text-accent-secondary" />
+                         <span>AI Prompts Editor</span>
+                    </h3>
+                    <p className="text-sm text-secondary">Tune formulas determining scoring match layouts and extraction rules flawless flawlessly.</p>
+                    
+                    <div className="flex flex-col gap-3 mt-2">
+                        {prompts.map((p: any) => (
+                            <div key={p.key} className="p-4 bg-white/5 border border-white/5 rounded-lg flex flex-col gap-3 transition-all">
+                                <div className="flex justify-between items-center">
+                                    <div>
+                                        <h4 className="font-semibold text-gradient capitalize">{p.key.replace(/_/g, ' ')}</h4>
+                                        <p className="text-xs text-secondary">{p.description}</p>
+                                    </div>
+                                    {editingPromptKey === p.key ? (
+                                        <div className="flex gap-2">
+                                            <button className="btn btn-xs btn-primary px-3" onClick={() => handleUpdatePrompt(p.key)}>Save</button>
+                                            <button className="btn btn-xs btn-secondary px-3" onClick={() => setEditingPromptKey(null)}>Cancel</button>
+                                        </div>
+                                    ) : (
+                                        <button 
+                                            className="btn btn-xs btn-secondary px-3" 
+                                            onClick={() => {
+                                                setEditingPromptKey(p.key);
+                                                setEditPromptText(p.prompt_text);
+                                            }}
+                                        >
+                                            Edit
+                                        </button>
+                                    )}
+                                </div>
+
+                                {editingPromptKey === p.key ? (
+                                    <textarea 
+                                        className="input-field text-xs font-mono w-full h-48 mt-1 p-2 bg-black/40 border border-accent-secondary/30 focus:outline-none resize-none" 
+                                        value={editPromptText} 
+                                        onChange={e => setEditPromptText(e.target.value)} 
+                                        placeholder="Enter prompt text template..."
+                                    />
+                                ) : (
+                                    <pre className="p-2 bg-black/20 rounded mt-1 overflow-auto max-h-40 whitespace-pre-wrap font-mono text-[11px] text-white/80 border border-white/5">
+                                        {p.prompt_text}
+                                    </pre>
+                                )}
+                            </div>
+                        ))}
+                    </div>
                 </div>
             )}
         </div>

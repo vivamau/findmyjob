@@ -146,10 +146,18 @@ async function updateCvMetadata(id, data) {
         }
     }
     
-    return await dbAsync.run(
-        'UPDATE Resumes SET title = ?, is_primary = ? WHERE id = ?',
-        [data.title, data.is_primary || 0, id]
-    );
+    let sql = 'UPDATE Resumes SET title = ?, is_primary = ?';
+    let params = [data.title, data.is_primary || 0];
+    
+    if (data.skills !== undefined) {
+        sql += ', skills = ?';
+        params.push(Array.isArray(data.skills) ? JSON.stringify(data.skills) : data.skills);
+    }
+    
+    sql += ' WHERE id = ?';
+    params.push(id);
+    
+    return await dbAsync.run(sql, params);
 }
 
 module.exports = {

@@ -35,6 +35,8 @@ export default function CVManager() {
   const [experiences, setExperiences] = useState<any[]>([]);
   const [educations, setEducations] = useState<any[]>([]);
   const [languages, setLanguages] = useState<any[]>([]);
+  const [skills, setSkills] = useState<string[]>([]);
+  const [newSkill, setNewSkill] = useState<string>('');
 
   const [isLoadingExperiences, setIsLoadingExperiences] = useState(false);
   const [isParsing, setIsParsing] = useState(false);
@@ -117,7 +119,7 @@ export default function CVManager() {
 
       try {
           const [pId, modelName] = selectedModel.split('|');
-          await api.post(`/cv/${cvId}/parse`, { model: modelName || selectedModel, provider_id: pId });
+          const response = await api.post(`/cv/${cvId}/parse`, { model: modelName || selectedModel, provider_id: pId });
           
           const [exp, edu, lang] = await Promise.all([
               api.get(`/cv/${cvId}/experiences`),
@@ -127,15 +129,38 @@ export default function CVManager() {
           setExperiences(exp.data);
           setEducations(edu.data);
           setLanguages(lang.data);
+          setSkills(response.data.skills || []);
            const now = new Date().toISOString();
-           setCvs(prev => prev.map(c => c.id === cvId ? { ...c, last_parse_at: now, parse_model: selectedModel } : c));
-           setSelectedCv((prev: any) => prev && prev.id === cvId ? { ...prev, last_parse_at: now, parse_model: selectedModel } : prev);
+           setCvs(prev => prev.map(c => c.id === cvId ? { ...c, last_parse_at: now, parse_model: selectedModel, skills: JSON.stringify(response.data.skills || []) } : c));
+           setSelectedCv((prev: any) => prev && prev.id === cvId ? { ...prev, last_parse_at: now, parse_model: selectedModel, skills: JSON.stringify(response.data.skills || []) } : prev);
       } catch (err: any) {
           alert(`AI parsing failed: ${err.response?.data?.error || err.message}`);
       } finally {
           setIsParsing(false);
           clearInterval(interval);
       }
+  };
+
+  const handleAddSkill = async () => {
+       if (!newSkill.trim() || !selectedCv) return;
+       const updated = [...skills, newSkill.trim()];
+       setSkills(updated);
+       setNewSkill('');
+       try {
+            await api.put(`/cv/${selectedCv.id}`, { title: selectedCv.title, skills: updated });
+            // Update list metadata flaws flawless
+            setCvs(prev => prev.map(c => c.id === selectedCv.id ? { ...c, skills: JSON.stringify(updated) } : c));
+       } catch (err: any) { alert(`Failed to add skill: ${err.message}`); }
+  };
+
+  const handleRemoveSkill = async (skillToRemove: string) => {
+       if (!selectedCv) return;
+       const updated = skills.filter(s => s !== skillToRemove);
+       setSkills(updated);
+       try {
+            await api.put(`/cv/${selectedCv.id}`, { title: selectedCv.title, skills: updated });
+            setCvs(prev => prev.map(c => c.id === selectedCv.id ? { ...c, skills: JSON.stringify(updated) } : c));
+       } catch (err: any) { alert(`Failed to remove skill: ${err.message}`); }
   };
 
   const handleDeleteCv = (cvId: number) => {
@@ -315,7 +340,10 @@ export default function CVManager() {
                     <span className="text-accent-tertiary font-bold">0</span>
                   </div>
                   <button 
-                    onClick={() => setSelectedCv(cv)}
+                    onClick={() => {
+                        setSelectedCv(cv);
+                        setSkills(typeof cv.skills === 'string' && cv.skills ? JSON.parse(cv.skills) : (cv.skills || []));
+                    }}
                     className="text-accent-primary hover:text-white text-sm flex items-center gap-1 transition-colors"
                   >
                     View Data <ArrowRight size={14} />
@@ -432,6 +460,38 @@ export default function CVManager() {
               </div>
               <button className="btn btn-secondary px-3 py-1 text-sm" onClick={() => setSelectedCv(null)}>Close</button>
             </header>
+
+            {/* Skills Section */}
+            <div className="border-b border-white/5 pb-4">
+              <h3 className="text-lg font-heading mb-2 flex items-center gap-2">
+                <Cpu size={18} className="text-accent-primary" /> Skills & Keywords
+              </h3>
+              <div className="flex flex-wrap gap-2 mb-3">
+                 {skills.length === 0 ? (
+                     <p className="text-xs text-secondary">No skills extracted yet.</p>
+                 ) : (
+                     skills.map((s, idx) => (
+                         <span key={idx} className="bg-white/5 border border-white/10 px-2 py-1 rounded-full text-xs flex items-center gap-1 group">
+                             {s}
+                             <button onClick={() => handleRemoveSkill(s)} className="text-secondary hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity ml-1">
+                                 &times;
+                             </button>
+                         </span>
+                     ))
+                 )}
+              </div>
+              <div className="flex gap-2 max-w-xs">
+                  <input 
+                      type="text" 
+                      className="input-field text-xs py-1" 
+                      placeholder="Add skill (e.g. React)" 
+                      value={newSkill} 
+                      onChange={e => setNewSkill(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && handleAddSkill()}
+                  />
+                  <button onClick={handleAddSkill} className="btn btn-primary btn-xs px-2 py-1 text-xs">Add</button>
+              </div>
+            </div>
 
             <div>
               <h3 className="text-lg font-heading mb-3">Work Experiences</h3>

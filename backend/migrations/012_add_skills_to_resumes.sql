@@ -1,0 +1,1 @@
+ALTER TABLE Resumes ADD COLUMN skills TEXT;

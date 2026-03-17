@@ -137,15 +137,16 @@ router.post('/:id/parse', async (req, res) => {
         if (parsed.languages) await addLanguages(resumeId, parsed.languages);
 
         await dbAsync.run(
-            'UPDATE Resumes SET last_parse_at = CURRENT_TIMESTAMP, parse_model = ? WHERE id = ?',
-            [model, resumeId]
+            'UPDATE Resumes SET last_parse_at = CURRENT_TIMESTAMP, parse_model = ?, skills = ? WHERE id = ?',
+            [model, JSON.stringify(parsed.skills || []), resumeId]
         );
 
         return res.status(200).json({
             message: 'CV parsed and nodes saved successfully',
             experiences: parsed.experiences || [],
             educations: parsed.educations || [],
-            languages: parsed.languages || []
+            languages: parsed.languages || [],
+            skills: parsed.skills || []
         });
 
     } catch (err) {

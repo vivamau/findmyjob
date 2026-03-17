@@ -1,5 +1,11 @@
 # FindAJob Agent Context
 
+## Session Tracking
+- Create a session log file in .agents/memory/sessions/YYYY-MM-DD_HH-MM-SS.md
+- Create a progress log file in .agents/memory/progress.md
+- Create a blockers log file in .agents/memory/blockers.md
+- Create a lessons learned log file in .agents/memory/lessons.md
+
 ## Session Start Protocol
 - Read .agents/memory/progress.md - current state
 - Read .agents/memory/lessons.md - past mistakes

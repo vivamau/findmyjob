@@ -70,4 +70,24 @@ router.post('/match', async (req, res) => {
     }
 });
 
+router.get('/prompts', async (req, res) => {
+    try {
+        const { getPrompts } = require('../services/aiService');
+        const prompts = await getPrompts();
+        res.status(200).json(prompts);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+router.put('/prompts/:key', async (req, res) => {
+    try {
+        const { updatePrompt } = require('../services/aiService');
+        await updatePrompt(req.params.key, req.body.prompt_text);
+        res.status(200).json({ message: 'Prompt updated successfully' });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 module.exports = router;

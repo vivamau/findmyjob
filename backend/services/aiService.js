@@ -2,6 +2,23 @@ const axios = require('axios');
 const { dbAsync } = require('../db');
 
 /**
+ * Fetches a prompt from the Database with a fallback.
+ */
+async function getPrompt(key) {
+    try {
+        const row = await dbAsync.get('SELECT prompt_text FROM Prompts WHERE key = ?', [key]);
+        if (row && row.prompt_text) {
+            console.log(`[Prompt] Loaded key '${key}' from Database.`);
+            return row.prompt_text;
+        }
+        throw new Error(`Prompt key '${key}' not found in Database or empty.`);
+    } catch (err) {
+        console.error(`[Prompt] Failed to load key '${key}':`, err.message);
+        throw err;
+    }
+}
+
+/**
  * Fetches available models from Ollama local API.
  * @returns {Promise<Array<string>>}
  */
@@ -25,28 +42,8 @@ async function listModels() {
  */
 async function parseJobListings(htmlText, model) {
     try {
-        const prompt = `Below is the text/HTML layout of a job board or search page.
-        
-        --- PAGE CONTENT ---
-        ${htmlText}
-        --- END OF PAGE ---
-
-        Identify and extract ALL listed Job positions present on the page layout.
-        For each job, extract: company_name, role_title, location, salary_range, description, apply_link.
-        
-        You MUST provide response strictly as a Single JSON Object with structure shown below:
-        {
-          "jobs": [
-            {
-              "company_name": "Google",
-              "role_title": "Software Engineer",
-              "location": "Remote",
-              "salary_range": "$120k",
-              "description": "Short summary",
-              "apply_link": "https://apply.com"
-            }
-          ]
-        }`;
+        const promptTemplate = await getPrompt('job_listing_parser');
+        const prompt = promptTemplate.replace('${htmlText}', htmlText);
 
         const active = await dbAsync.get('SELECT * FROM ProviderConfigs WHERE is_active = 1');
         const provider = active ? active.provider_id : 'ollama';
@@ -76,7 +73,7 @@ async function parseJobListings(htmlText, model) {
             responseText = res.data.choices[0].message.content;
         }
 
-        console.log(`=== RAW JOB RESPONSE ===\n${responseText}`);
+        // console.log(`=== RAW JOB RESPONSE ===\n${responseText}`);
         
         // Bulletproof Regex fallback to extract JSON string flawless setup
         const jsonMatch = responseText.match(/\{[\s\S]*\}/);
@@ -106,48 +103,8 @@ async function parseJobListings(htmlText, model) {
  */
 async function parseCvWithModel(cvText, model, providerId = null) {
     try {
-        const prompt = `Below is the text of a CV document.
-         
-        --- CV TEXT ---
-        ${cvText}
-        --- END OF CV ---
-
-        You are an expert resume parsing system. Extract ALL listed records for Work Experience, Education, and Languages. 
-        You MUST format response STRICLY as a Single JSON Object with keys shown below.
-        
-        Example Output Format:
-        {
-          "experiences": [
-            {
-              "company_name": "Google",
-              "role_title": "Software Engineer",
-              "start_date": "Jan 2020",
-              "end_date": "Dec 2022",
-              "description": "Built core service pipelines"
-            }
-          ],
-          "educations": [
-            {
-              "institution_name": "University",
-              "degree_title": "BSc Computer Science",
-              "start_date": "2016",
-              "end_date": "2020",
-              "description": "Graduated with Honors"
-            }
-          ],
-          "languages": [
-            {
-              "language_name": "English",
-              "proficiency_level": "Native"
-            },
-            {
-              "language_name": "Spanish",
-              "proficiency_level": "B2"
-            }
-          ]
-        }
-
-        Return empty lists if no items found.`;
+        const promptTemplate = await getPrompt('cv_parser_model');
+        const prompt = promptTemplate.replace('${cvText}', cvText);
 
         const active = providerId 
             ? await dbAsync.get('SELECT * FROM ProviderConfigs WHERE provider_id = ?', [providerId])
@@ -196,8 +153,8 @@ async function parseCvWithModel(cvText, model, providerId = null) {
             jsonString = response.data.choices[0].message.content;
         }
         
-        console.log(`=== RAW ${provider.toUpperCase()} RESPONSE ===`);
-        console.log(jsonString);
+        // console.log(`=== RAW ${provider.toUpperCase()} RESPONSE ===`);
+        // console.log(jsonString);
 
         if (!jsonString) {
             throw new Error('Ollama returned an empty response');
@@ -222,7 +179,8 @@ async function parseCvWithModel(cvText, model, providerId = null) {
         return {
             experiences: output.experiences || (Array.isArray(output) ? output : []),
             educations: output.educations || [],
-            languages: output.languages || []
+            languages: output.languages || [],
+            skills: output.skills || []
         };
     } catch (err) {
         console.error('AI Parse failed:', err.message);
@@ -235,26 +193,10 @@ async function parseCvWithModel(cvText, model, providerId = null) {
  */
 async function matchCvWithJob(cv, job, model) {
     try {
-        const prompt = `You are an expert HR recruiter assistant. Match the Candidate CV details against the Job Description below.
-        
-        --- CANDIDATE CV ---
-        ${JSON.stringify(cv, null, 2)}
-        --- END OF CV ---
-
-        --- JOB DESCRIPTION ---
-        ${JSON.stringify(job, null, 2)}
-        --- END OF JOB ---
-
-        Calculate a compatibility fit Score (0 to 100).
-        Identify the skills or keywords present in the CV that match the Job requirements for tags.
-        Provide a concise 1-2 sentence analysis highlighting matches or missing gaps.
-
-        You MUST respond strictly as a Single JSON Object with keys:
-        {
-          "match_score": 85,
-          "matching_tags": ["React", "TypeScript"],
-          "summary_analysis": "Candidate is highly compatible with the tech stack but lacks explicit management experience."
-        }`;
+        const promptTemplate = await getPrompt('match_cv_with_job');
+        const prompt = promptTemplate
+            .replace('${JSON.stringify(cv, null, 2)}', JSON.stringify(cv, null, 2))
+            .replace('${JSON.stringify(job, null, 2)}', JSON.stringify(job, null, 2));
 
         const active = await dbAsync.get('SELECT * FROM ProviderConfigs WHERE is_active = 1');
         const provider = active ? active.provider_id : 'ollama';
@@ -311,11 +253,21 @@ async function updateProviderConfig(provider_id, data) {
     );
 }
 
+async function getPrompts() {
+    return await dbAsync.all('SELECT * FROM Prompts');
+}
+
+async function updatePrompt(key, prompt_text) {
+    return await dbAsync.run('UPDATE Prompts SET prompt_text = ? WHERE key = ?', [prompt_text, key]);
+}
+
 module.exports = {
     listModels,
     parseCvWithModel,
     parseJobListings,
     matchCvWithJob,
     getProviderConfigs,
-    updateProviderConfig
+    updateProviderConfig,
+    getPrompts,
+    updatePrompt
 };

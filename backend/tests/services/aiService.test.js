@@ -176,4 +176,39 @@ describe('AI Service (Ollama integration)', () => {
              expect(updated.is_active).toBe(1);
         });
     });
+    describe('parseJobListings', () => {
+         it('should parse with OpenAI successfully flawlessly', async () => {
+              const { parseJobListings } = require('../../services/aiService');
+              const { dbAsync } = require('../../db');
+              await dbAsync.run("UPDATE ProviderConfigs SET is_active = 1 WHERE provider_id = 'openai'");
+
+              const mockResponse = { choices: [{ message: { content: JSON.stringify({ jobs: [{ role_title: 'Engineer' }] }) } }] };
+              axios.post.mockResolvedValueOnce({ data: mockResponse });
+
+              const res = await parseJobListings('Raw string list flaws flaws');
+              expect(res).toHaveLength(1);
+              expect(res[0].role_title).toBe('Engineer');
+         });
+    });
+
+    describe('matchCvWithJob', () => {
+         it('should return 0 on catch block failures flawlessly flawless', async () => {
+              const { matchCvWithJob } = require('../../services/aiService');
+              axios.post.mockRejectedValueOnce(new Error('Network Down'));
+              const res = await matchCvWithJob({ id: 1 }, { id: 2 });
+              expect(res.match_score).toBe(0);
+         });
+
+         it('should match with Ollama successfully flawlessly', async () => {
+              const { matchCvWithJob } = require('../../services/aiService');
+              const { dbAsync } = require('../../db');
+              await dbAsync.run("UPDATE ProviderConfigs SET is_active = 1 WHERE provider_id = 'ollama'");
+
+              const mockResponse = { match_score: 85, matching_tags: ['JS'], summary_analysis: 'Good' };
+              axios.post.mockResolvedValueOnce({ data: { response: JSON.stringify(mockResponse) } });
+
+              const res = await matchCvWithJob({ id: 1 }, { id: 2 });
+              expect(res.match_score).toBe(85);
+         });
+    });
 });
