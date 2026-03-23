@@ -1,11 +1,15 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Activity, Target, CheckCircle, Clock } from 'lucide-react';
 import api from '../utils/api';
 
 export default function Dashboard() {
+  const navigate = useNavigate();
   const [backendStatus, setBackendStatus] = useState<'Checking...' | 'Connected' | 'Error'>('Checking...');
   const [cvs, setCvs] = useState<any[]>([]);
+  const [applications, setApplications] = useState<any[]>([]);
   const [isLoadingCvs, setIsLoadingCvs] = useState(false);
+  const [autoMatchCount, setAutoMatchCount] = useState<number>(0);
 
   const formatDate = (dateString: string, includeTime = false) => {
       if (!dateString) return 'Never';
@@ -39,9 +43,26 @@ export default function Dashboard() {
       .catch(() => setBackendStatus('Error'));
 
     api.get('/cv')
-      .then(res => setCvs(res.data))
+      .then(res => {
+          setCvs(res.data);
+          const primaryCv = res.data.find((c: any) => c.is_primary === 1) || res.data[0];
+          if (primaryCv) {
+              api.get(`/jobs?resume_id=${primaryCv.id}`)
+                 .then(jobsRes => {
+                     if (jobsRes.data && Array.isArray(jobsRes.data)) {
+                         const count = jobsRes.data.filter((j: any) => (j.match_score || 0) >= 60).length;
+                         setAutoMatchCount(count);
+                     }
+                 })
+                 .catch(() => {});
+          }
+      })
       .catch(() => {})
       .finally(() => setIsLoadingCvs(false));
+
+    api.get('/applications')
+      .then(res => setApplications(res.data))
+      .catch(() => {});
   }, []);
   return (
     <div className="animate-fade-in">
@@ -54,7 +75,7 @@ export default function Dashboard() {
              <span className="text-secondary">Backend: {backendStatus}</span>
           </div>
         </div>
-        <button className="btn btn-primary">
+        <button className="btn btn-primary" onClick={() => navigate('/applications', { state: { openAddModal: true } })}>
           <Target size={18} />
           <span>New Application</span>
         </button>
@@ -64,7 +85,7 @@ export default function Dashboard() {
         <div className="glass-card flex items-center justify-between">
           <div>
             <p className="text-secondary text-sm font-medium">Total Applications</p>
-            <h3 className="text-3xl mt-2">24</h3>
+            <h3 className="text-3xl mt-2">{applications.length}</h3>
           </div>
           <div className="p-3 bg-[rgba(124,58,237,0.1)] rounded-full text-accent-primary" style={{ backgroundColor: 'rgba(124,58,237,0.1)', color: 'var(--accent-primary)' }}>
             <Activity size={24} />
@@ -74,7 +95,7 @@ export default function Dashboard() {
         <div className="glass-card flex items-center justify-between">
           <div>
             <p className="text-secondary text-sm font-medium">Interviews Scheduled</p>
-            <h3 className="text-3xl mt-2">3</h3>
+            <h3 className="text-3xl mt-2">{applications.filter(a => a.status === 'Interview').length}</h3>
           </div>
           <div className="p-3 rounded-full" style={{ backgroundColor: 'rgba(16,185,129,0.1)', color: 'var(--success)' }}>
             <CheckCircle size={24} />
@@ -84,7 +105,7 @@ export default function Dashboard() {
         <div className="glass-card flex items-center justify-between">
           <div>
             <p className="text-secondary text-sm font-medium">Pending Responses</p>
-            <h3 className="text-3xl mt-2">18</h3>
+            <h3 className="text-3xl mt-2">{applications.filter(a => a.status === 'Applied' || a.status === 'In Review').length}</h3>
           </div>
           <div className="p-3 rounded-full" style={{ backgroundColor: 'rgba(245,158,11,0.1)', color: 'var(--warning)' }}>
             <Clock size={24} />
@@ -94,7 +115,7 @@ export default function Dashboard() {
         <div className="glass-card flex items-center justify-between">
           <div>
             <p className="text-secondary text-sm font-medium">Auto-Matches Found</p>
-            <h3 className="text-3xl mt-2">142</h3>
+            <h3 className="text-3xl mt-2">{autoMatchCount}</h3>
           </div>
           <div className="p-3 rounded-full" style={{ backgroundColor: 'rgba(59,130,246,0.1)', color: 'var(--accent-tertiary)' }}>
             <Target size={24} />
@@ -106,19 +127,31 @@ export default function Dashboard() {
         <div className="glass-panel lg:col-span-2 p-6">
           <h3 className="text-xl mb-4 font-heading">Recent Application Activity</h3>
           <div className="flex flex-col gap-4">
-            {[
-              { role: 'Senior Frontend Engineer', company: 'Google', status: 'In Review', date: '2 days ago', badge: 'badge-warning' },
-              { role: 'React Developer', company: 'Stripe', status: 'Interview', date: '4 days ago', badge: 'badge-success' },
-              { role: 'Fullstack Engineer', company: 'Netflix', status: 'Applied', date: '1 week ago', badge: 'badge' },
-            ].map((app, i) => (
-              <div key={i} className="flex items-center justify-between p-4 rounded-md" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
+            {applications.slice(0, 5).map((app: any, i: number) => (
+              <div key={app.id || i} className="flex items-center justify-between p-4 rounded-md" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
                 <div>
-                  <h4 className="font-semibold">{app.role}</h4>
-                  <p className="text-sm text-secondary">{app.company} • Applied using "Tech CV v2"</p>
+                  <h4 className="font-semibold">{app.role_title}</h4>
+                  <p className="text-sm text-secondary">{app.company_name} • Applied using CV</p>
                 </div>
                 <div className="flex items-center gap-4">
-                  <span className={`badge ${app.badge}`}>{app.status}</span>
-                  <span className="text-sm text-muted">{app.date}</span>
+                  <span className="px-3 py-1 rounded-full text-xs font-medium border" style={{
+                      backgroundColor: app.status === 'Offer' ? 'rgba(16,185,129,0.1)' : 
+                                      app.status === 'Interview' ? 'rgba(59,130,246,0.1)' :
+                                      app.status === 'In Review' ? 'rgba(245,158,11,0.1)' :
+                                      app.status === 'Applied' ? 'rgba(255,255,255,0.05)' :
+                                      'rgba(139,92,246,0.1)',
+                      color: app.status === 'Offer' ? 'var(--success)' : 
+                             app.status === 'Interview' ? 'var(--accent-tertiary)' :
+                             app.status === 'In Review' ? 'var(--warning)' :
+                             app.status === 'Applied' ? 'white' :
+                             'var(--accent-secondary)',
+                      borderColor: app.status === 'Offer' ? 'rgba(16,185,129,0.2)' : 
+                                   app.status === 'Interview' ? 'rgba(59,130,246,0.2)' :
+                                   app.status === 'In Review' ? 'rgba(245,158,11,0.2)' :
+                                   app.status === 'Applied' ? 'rgba(255,255,255,0.1)' :
+                                   'rgba(139,92,246,0.2)',
+                  }}>{app.status}</span>
+                  <span className="text-sm text-muted">{formatDate(app.updated_at || app.applied_at)}</span>
                 </div>
               </div>
             ))}

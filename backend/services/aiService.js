@@ -58,9 +58,10 @@ async function parseJobListings(htmlText, model) {
                 model: selectedModel,
                 prompt: prompt,
                 stream: false,
+                format: 'json',
                 options: {
-                    num_predict: 4096, // Increase output limit flawlessly
-                    num_ctx: 8192      // Increase context size flaws
+                    num_predict: 4096,
+                    num_ctx: 32768 // Expand fully context sizes flaws Loaded
                 }
             });
             responseText = res.data.response;
@@ -239,6 +240,52 @@ async function matchCvWithJob(cv, job, model) {
     }
 }
 
+/**
+ * Summarizes raw full core text description flawlessly flawlessly.
+ */
+async function summarizeJobDescription(fullText, model) {
+    try {
+        const prompt = `Below is the raw text extracted from a job details page. 
+        Reformat stress-free and summarize it into a clean, concise, highly readable description.
+        Highlight strictly:
+        - Position Summary
+        - Core Responsibilities
+        - Key Requirements / Tech Stack
+        
+        Raw Content Layout:
+        ${fullText}
+
+        Respond ONLY with the clean readable summary text. Do not provide markdown headers wrapper setups flawlessly flaws.`;
+
+        const active = await dbAsync.get('SELECT * FROM ProviderConfigs WHERE is_active = 1');
+        const provider = active ? active.provider_id : 'ollama';
+        const apiKey = active ? active.api_key : '';
+        const selectedModel = model || (active && active.default_model) || 'llama3';
+
+        let responseText = '';
+        if (provider === 'ollama') {
+            const res = await axios.post(`http://localhost:11434/api/generate`, {
+                model: selectedModel,
+                prompt: prompt,
+                stream: false,
+                options: { temperature: 0.2 }
+            });
+            responseText = res.data.response;
+        } else if (provider === 'openai') {
+            const res = await axios.post('https://api.openai.com/v1/chat/completions', {
+                model: selectedModel,
+                messages: [{ role: 'user', content: prompt }]
+            }, { headers: { 'Authorization': `Bearer ${apiKey}` } });
+            responseText = res.data.choices[0].message.content;
+        }
+
+        return responseText ? responseText.trim() : 'No clean summary generated.';
+    } catch (err) {
+         console.error('[AI_SUMMARY] Failed:', err.message);
+         throw err;
+    }
+}
+
 async function getProviderConfigs() {
     return await dbAsync.all('SELECT * FROM ProviderConfigs');
 }
@@ -313,5 +360,6 @@ module.exports = {
     updateProviderConfig,
     getPrompts,
     updatePrompt,
-    generateEmbedding
+    generateEmbedding,
+    summarizeJobDescription
 };

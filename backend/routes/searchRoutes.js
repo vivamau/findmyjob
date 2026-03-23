@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const { dbAsync } = require('../db');
 const vectorService = require('../services/vectorService');
 
 /**
@@ -35,6 +36,38 @@ router.post('/index-job', async (req, res) => {
     } catch (err) {
         console.error('Indexing error:', err);
         res.status(500).json({ error: 'Failed to index job.' });
+    }
+});
+
+/**
+ * Bulk sync all jobs into LanceDB.
+ */
+router.post('/sync-lancedb', async (req, res) => {
+    try {
+        console.log("[Sync] Fetching jobs from SQLite...");
+        const jobs = await dbAsync.all('SELECT id, role_title, description FROM JobListings');
+        
+        console.log(`[Sync] Found ${jobs.length} jobs. Beginning sequential vector indexing...`);
+        let successCount = 0;
+        let failCount = 0;
+
+        for (const job of jobs) {
+            const success = await vectorService.indexJob(job.id, job.role_title || '', job.description || '');
+            if (success) {
+                successCount++;
+            } else {
+                failCount++;
+            }
+        }
+
+        res.status(200).json({ 
+            message: 'Sync complete', 
+            successCount, 
+            failCount 
+        });
+    } catch (err) {
+        console.error('Bulk sync error:', err);
+        res.status(500).json({ error: 'Failed to execute bulk sync.' });
     }
 });
 

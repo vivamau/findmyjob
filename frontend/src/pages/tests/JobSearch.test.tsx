@@ -10,15 +10,32 @@ jest.mock('../../utils/api', () => ({
 
 describe('JobSearch Component', () => {
     it('fetches and renders job listings flawlessly template', async () => {
-         (api.get as jest.Mock).mockResolvedValueOnce({ 
-             data: [
-                 { id: 1, company_name: 'TestCorp', role_title: 'Software Dev', location: 'Remote', salary_range: '$100k', description: 'Cool job', apply_link: 'http://test.com' }
-             ] 
+         (api.get as jest.Mock).mockImplementation((url: string) => {
+             if (url.includes('/cv')) return Promise.resolve({ data: [{ id: 1, title: 'My CV' }] });
+             if (url.includes('/jobs')) return Promise.resolve({ data: [{ id: 3, company_name: 'TestCorp', role_title: 'Software Dev', description: 'desc' }] });
+             return Promise.resolve({ data: [] });
          });
 
          render(<JobSearch />);
 
          await waitFor(() => expect(screen.getByText('TestCorp')).toBeInTheDocument());
          expect(screen.getByText('Software Dev')).toBeInTheDocument();
+    });
+    it('triggers Sync LanceDB refresh endpoint flawlessly', async () => {
+         (api.get as jest.Mock).mockImplementation((url: string) => {
+             if (url.includes('/cv')) return Promise.resolve({ data: [{ id: 1, title: 'My CV' }] });
+             if (url.includes('/jobs')) return Promise.resolve({ data: [{ id: 3, role_title: 'TestCorp', description: 'desc' }] });
+             return Promise.resolve({ data: [] });
+         });
+         (api.post as jest.Mock).mockResolvedValue({ data: { message: 'Sync complete', successCount: 1 } });
+
+         const { getByText } = render(<JobSearch />);
+         // Wait for jobs to render and batch match to run or button to appear flaws
+         await waitFor(() => expect(getByText('Sync Match Index')).toBeInTheDocument());
+
+         const syncButton = getByText('Sync Match Index');
+         syncButton.click();
+
+         expect(api.post).toHaveBeenCalledWith('/search/sync-lancedb');
     });
 });

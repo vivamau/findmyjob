@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Sparkles } from 'lucide-react';
 import api from '../utils/api';
 import JobCard from './components/JobCard';
@@ -158,6 +159,48 @@ export default function JobSearch() {
       }, 50);
   };
 
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [showSyncModal, setShowSyncModal] = useState(false);
+  const [syncStats, setSyncStats] = useState<{ successCount: number; failCount: number } | null>(null);
+
+  const handleSyncVectors = async () => {
+       setIsSyncing(true);
+       try {
+           const res = await api.post('/search/sync-lancedb');
+           setSyncStats({ 
+               successCount: res.data.successCount || 0, 
+               failCount: res.data.failCount || 0 
+           });
+           setShowSyncModal(true);
+           if (selectedCvId) {
+               autoRunRef.current = ''; 
+               const jobsRes = await api.get('/jobs', { params: { resume_id: selectedCvId } });
+               const updatedJobs = jobsRes.data;
+               setJobs(updatedJobs);
+
+               const job_ids = updatedJobs.map((j: any) => j.id).filter(Boolean);
+               if (job_ids.length > 0) {
+                   try {
+                       await api.post('/ai/match-batch', {
+                           resume_id: parseInt(selectedCvId),
+                           job_ids,
+                           force: true
+                       });
+                       const freshRes = await api.get('/jobs', { params: { resume_id: selectedCvId } });
+                       setJobs(freshRes.data);
+                   } catch (batchErr) {
+                       console.error("Batch match failed following sync", batchErr);
+                   }
+               }
+           }
+
+       } catch (err) {
+           console.error("Sync vectors error", err);
+       } finally {
+           setIsSyncing(false);
+       }
+  };
+
   const handleRunBatchMatch = async () => {
       if (!selectedCvId || currentJobs.length === 0) return;
       setIsBatchRunning(true);
@@ -165,7 +208,8 @@ export default function JobSearch() {
           const job_ids = currentJobs.map((j: any) => j.id);
           const res = await api.post('/ai/match-batch', {
               resume_id: parseInt(selectedCvId),
-              job_ids
+              job_ids,
+              force: true
           });
           if (res.data.results) {
               setBatchScores(prev => ({ ...prev, ...res.data.results }));
@@ -205,17 +249,31 @@ export default function JobSearch() {
             setIsOpen={setIsDropdownOpen} 
           />
           {selectedCvId && currentJobs.length > 0 && (
-              <button
-                  onClick={handleRunBatchMatch}
-                  disabled={isBatchRunning}
-                  className="btn btn-secondary flex items-center gap-2 text-sm"
-                  title={`Run AI match for all ${currentJobs.length} jobs on this page`}
-              >
-                  <Sparkles size={14} className={isBatchRunning ? 'animate-spin text-accent-secondary' : 'text-accent-secondary'} />
-                  {isBatchRunning
-                      ? `Analyzing ${currentJobs.length} jobs...`
-                      : `AI Match All (${currentJobs.length})`}
-              </button>
+              <div className="flex gap-2">
+                  <button
+                      onClick={handleRunBatchMatch}
+                      disabled={isBatchRunning}
+                      className="btn btn-secondary flex items-center gap-2 text-sm"
+                      title={`Run AI match for all ${currentJobs.length} jobs on this page`}
+                  >
+                      <Sparkles size={14} className={isBatchRunning ? 'animate-spin text-accent-secondary' : 'text-accent-secondary'} />
+                      {isBatchRunning
+                          ? `Analyzing ${currentJobs.length} jobs...`
+                          : `AI Match All (${currentJobs.length})`}
+                  </button>
+
+                  <button
+                      onClick={handleSyncVectors}
+                      disabled={isSyncing}
+                      className="btn btn-secondary flex items-center gap-2 text-sm"
+                      title="Force bulk sync for vectors listing flawlessly in LanceDB flaws"
+                  >
+                      <Sparkles size={14} className={isSyncing ? 'animate-spin text-accent-secondary' : 'text-accent-secondary'} />
+                      {isSyncing
+                          ? `Syncing...`
+                          : `Sync Match Index`}
+                  </button>
+              </div>
           )}
         </div>
       </div>
@@ -280,6 +338,35 @@ export default function JobSearch() {
             totalItems={filteredJobs.length}
             onPageChange={handlePageChange}
           />
+      )}
+
+      {showSyncModal && syncStats && createPortal(
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowSyncModal(false)} />
+          <div className="bg-gradient-to-br from-gray-900 to-black border border-white/10 p-6 rounded-2xl max-w-sm w-full shadow-2xl relative z-10 animate-scale-in">
+              <h3 className="text-xl font-heading mb-3 text-gradient">Sync Completed!</h3>
+              <p className="text-secondary text-sm mb-4">
+                  The LanceDB vector index has been fully refreshed flawlessly setup.
+              </p>
+              <div className="space-y-2 mb-6 bg-black/40 border border-white/5 p-3 rounded-lg text-sm">
+                  <div className="flex justify-between">
+                      <span className="text-secondary">Indexed successfully:</span>
+                      <span className="font-semibold text-accent-secondary">{syncStats.successCount}</span>
+                  </div>
+                  <div className="flex justify-between">
+                      <span className="text-secondary">Failed:</span>
+                      <span className="font-semibold text-red-500">{syncStats.failCount}</span>
+                  </div>
+              </div>
+              <button 
+                  onClick={() => setShowSyncModal(false)}
+                  className="btn btn-primary w-full"
+              >
+                  Awesome
+              </button>
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   );

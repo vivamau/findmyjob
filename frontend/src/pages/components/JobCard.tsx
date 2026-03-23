@@ -40,6 +40,23 @@ export default function JobCard({ job, selectedCvId, externalScore, externalTags
         }
     }, [externalScore, externalTags, externalAnalysis]);
 
+    const [isSaved, setIsSaved] = useState(false);
+
+    useEffect(() => {
+        const checkSavedStatus = async () => {
+            try {
+                const res = await api.get('/applications');
+                if (res.data && Array.isArray(res.data)) {
+                    const exists = res.data.some((app: any) => app.company_name === job.company_name && app.role_title === job.role_title);
+                    if (exists) setIsSaved(true);
+                }
+            } catch (err) {
+                console.error("Check saved status error", err);
+            }
+        };
+        checkSavedStatus();
+    }, [job.company_name, job.role_title]);
+
     const handleRunMatch = async () => {
         if (!selectedCvId) return;
         setLoading(true);
@@ -50,6 +67,21 @@ export default function JobCard({ job, selectedCvId, externalScore, externalTags
             setAnalysis(res.data.summary_analysis);
         } catch (err) { console.error(err); }
         setLoading(false);
+    };
+
+    const handleSaveForLater = async () => {
+        try {
+            await api.post('/applications', {
+                resume_id: selectedCvId ? parseInt(selectedCvId) : null,
+                company_name: job.company_name,
+                role_title: job.role_title,
+                status: 'Saved',
+                notes: `Saved from Job Search. Match Score: ${score !== null ? score + '%' : 'N/A'}`
+            });
+            setIsSaved(true);
+        } catch (err) {
+            console.error("Save application error", err);
+        }
     };
 
     return (
@@ -128,7 +160,13 @@ export default function JobCard({ job, selectedCvId, externalScore, externalTags
             </div>
 
             <div className="flex justify-end gap-4 mt-4 pt-4 border-t border-white/10">
-                <button className="btn btn-secondary">Save for Later</button>
+                <button 
+                    className={`btn ${isSaved ? 'btn-primary bg-success/20 text-success border-success/30' : 'btn-secondary'}`} 
+                    onClick={handleSaveForLater}
+                    disabled={isSaved}
+                >
+                    {isSaved ? 'Saved' : 'Save for Later'}
+                </button>
                 <a href={job.apply_link} target="_blank" rel="noreferrer" className="btn btn-primary flex items-center gap-1">
                     <ExternalLink size={16} />
                     <span>Apply Now</span>

@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { dbAsync } = require('../db');
-const { parseJobListings } = require('../services/aiService');
+const { parseJobListings, summarizeJobDescription } = require('../services/aiService');
 const vectorService = require('../services/vectorService');
 const axios = require('axios');
 
@@ -198,7 +198,7 @@ router.post('/scrape', async (req, res) => {
                         const cleanedText = pageData
                             .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
                             .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
-                            .replace(/<[^>]+>/g, ' ')
+                            .replace(/<(?!a|A|\/a|\/A)\b[^>]+>/g, ' ')
                             .replace(/\s+/g, ' ')
                             .trim()
                             .substring(0, 15000); // 15,000 chars is fully safe with expanded num_ctx flawlessly
@@ -212,17 +212,39 @@ router.post('/scrape', async (req, res) => {
                 // depth 1: Follow links for deeper descriptions flawlessly
                 console.log(`[SCRAPE] Following links for ${jobs.length} jobs to expand context...`);
                 for (const job of jobs) {
-                    if (job.apply_link && job.apply_link.startsWith('http') && job.apply_link !== source.url) {
+                    let detailUrl = job.apply_link;
+                    if (detailUrl && !detailUrl.startsWith('http') && !detailUrl.startsWith('javascript:')) {
+                        const urlObj = new URL(source.url);
+                        detailUrl = `${urlObj.origin}${detailUrl.startsWith('/') ? '' : '/'}${detailUrl}`;
+                        job.apply_link = detailUrl;
+                    }
+
+                    if (detailUrl && detailUrl.startsWith('http') && detailUrl !== source.url) {
                         try {
-                            const detailPage = await axios.get(job.apply_link, {
-                                headers: {
-                                    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
-                                    'Accept': 'text/html'
-                                },
-                                timeout: 8000 // Avert hanging flaws
-                            });
+                            let detailHtml = '';
+                            const isDynamic = detailUrl.includes('successfactors') || detailUrl.includes('workday');
                             
-                            const cleanedDetail = detailPage.data
+                            if (isDynamic) {
+                                try {
+                                    const { scrapeDynamicPage } = require('../services/scraperService');
+                                    detailHtml = await scrapeDynamicPage(detailUrl);
+                                } catch (dynErr) {
+                                    console.log(`[SCRAPE_DEPTH_1] Dynamic scrape failed for: ${detailUrl} (${dynErr.message})`);
+                                }
+                            }
+
+                            if (!detailHtml) {
+                                const detailPage = await axios.get(detailUrl, {
+                                    headers: {
+                                        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+                                        'Accept': 'text/html'
+                                    },
+                                    timeout: 8000 // Avert hanging flaws
+                                });
+                                detailHtml = detailPage.data;
+                            }
+                            
+                            const cleanedDetail = detailHtml
                                 .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
                                 .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
                                 .replace(/<[^>]+>/g, ' ')
@@ -230,7 +252,18 @@ router.post('/scrape', async (req, res) => {
                                 .substring(0, 10000);
 
                             if (cleanedDetail.length > 300) {
-                                job.description = `${job.description || ''}\n\n[FULL DETAILS]\n${cleanedDetail}`;
+                                try {
+                                    console.log(`[AI_SUMMARY] Summarizing full text for: ${job.role_title || 'Position'}`);
+                                    const aiSummary = await summarizeJobDescription(cleanedDetail);
+                                    if (aiSummary) {
+                                        job.description = aiSummary;
+                                    } else {
+                                        job.description = `${job.description || ''}\n\n[FULL DETAILS]\n${cleanedDetail}`;
+                                    }
+                                } catch (aiErr) {
+                                     console.error(`[AI_SUMMARY] Failed for ${job.role_title || 'Position'}:`, aiErr.message);
+                                     job.description = `${job.description || ''}\n\n[FULL DETAILS]\n${cleanedDetail}`;
+                                }
                             }
                         } catch (err) {
                             console.log(`[SCRAPE_DEPTH_1] Static follow failed for ${job.apply_link} (${err.message})`);
