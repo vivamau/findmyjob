@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Briefcase, MapPin, DollarSign, Star, ExternalLink, Sparkles } from 'lucide-react';
 import api from '../../utils/api';
 
@@ -17,15 +17,28 @@ interface JobCardProps {
         summary_analysis?: string;
     };
     selectedCvId: string;
+    externalScore?: number | null;
+    externalTags?: string[];
+    externalAnalysis?: string | null;
 }
 
-export default function JobCard({ job, selectedCvId }: JobCardProps) {
+export default function JobCard({ job, selectedCvId, externalScore, externalTags, externalAnalysis }: JobCardProps) {
     const [loading, setLoading] = useState(false);
     const [score, setScore] = useState<number | null>(job.match_score !== undefined ? job.match_score : null);
+    const [isExpanded, setIsExpanded] = useState(false);
     const [tags, setTags] = useState<string[]>(() => {
         try { return JSON.parse(job.matching_tags || '[]'); } catch { return []; }
     });
     const [analysis, setAnalysis] = useState<string | null>(job.summary_analysis || null);
+
+    // Sync external batch results when parent updates them
+    useEffect(() => {
+        if (externalScore !== undefined && externalScore !== null) {
+            setScore(externalScore);
+            setTags(externalTags || []);
+            setAnalysis(externalAnalysis || null);
+        }
+    }, [externalScore, externalTags, externalAnalysis]);
 
     const handleRunMatch = async () => {
         if (!selectedCvId) return;
@@ -43,10 +56,12 @@ export default function JobCard({ job, selectedCvId }: JobCardProps) {
         <div className="glass-panel p-6 hover:border-border-focus transition-all duration-300 animate-fade-in mb-4">
             <div className="flex justify-between items-start mb-4">
                 <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-lg bg-[rgba(255,255,255,0.05)] flex items-center justify-center border border-white/10">
-                        <Briefcase size={24} className="text-accent-tertiary" />
-                    </div>
                     <div>
+                        {job.created_at && (
+                            <div className="text-xs text-accent-secondary/80 font-medium mb-1 tracking-wider uppercase">
+                                {new Date(job.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}
+                            </div>
+                        )}
                         <h3 className="text-xl font-semibold mb-1">{job.role_title}</h3>
                         <div className="flex gap-4 text-sm text-secondary">
                             <span className="flex items-center gap-1"><Briefcase size={14}/> {job.company_name}</span>
@@ -56,8 +71,15 @@ export default function JobCard({ job, selectedCvId }: JobCardProps) {
                     </div>
                 </div>
                 <div className="flex flex-col items-center">
-                    <div className="relative w-14 h-14 flex items-center justify-center rounded-full border-4" style={{ borderColor: score !== null ? `rgba(16,185,129, ${score / 100})` : 'rgba(255,255,255,0.1)' }}>
-                        <span className="font-bold font-heading">{score !== null ? `${score}%` : 'N/A'}</span>
+                    <div className="relative w-14 h-14 flex items-center justify-center rounded-full border-4" style={{
+                        borderColor: score !== null
+                            ? score >= 60 ? '#10b981'    // green - strong match
+                            : score >= 30 ? '#f59e0b'    // amber - moderate
+                            : '#ef4444'                  // red - weak
+                            : 'rgba(255,255,255,0.1)',
+                        boxShadow: score !== null ? `0 0 8px ${score >= 60 ? 'rgba(16,185,129,0.4)' : score >= 30 ? 'rgba(245,158,11,0.4)' : 'rgba(239,68,68,0.3)'}` : 'none'
+                    }}>
+                        <span className="font-bold font-heading text-sm" style={{ color: score !== null ? (score >= 60 ? '#10b981' : score >= 30 ? '#f59e0b' : '#ef4444') : 'inherit' }}>{score !== null ? `${score}%` : 'N/A'}</span>
                     </div>
                     <span className="text-xs text-secondary mt-1">CV Match</span>
                 </div>
@@ -91,9 +113,19 @@ export default function JobCard({ job, selectedCvId }: JobCardProps) {
                 </div>
             )}
 
-            <p className="text-sm text-secondary line-clamp-2 mb-4">
-                {job.description}
-            </p>
+            <div>
+                <p className={`text-sm text-secondary mb-2 whitespace-pre-wrap ${!isExpanded ? 'line-clamp-3' : ''}`}>
+                    {job.description || 'No description available.'}
+                </p>
+                {job.description && job.description.length > 200 && (
+                    <button 
+                        onClick={() => setIsExpanded(!isExpanded)}
+                        className="text-accent-secondary text-xs font-semibold hover:underline bg-none border-none p-0 focus:outline-none mb-4"
+                    >
+                        {isExpanded ? 'Show less' : 'View more'}
+                    </button>
+                )}
+            </div>
 
             <div className="flex justify-end gap-4 mt-4 pt-4 border-t border-white/10">
                 <button className="btn btn-secondary">Save for Later</button>
