@@ -5,6 +5,8 @@
 - Create a progress log file in .agents/memory/progress.md
 - Create a blockers log file in .agents/memory/blockers.md
 - Create a lessons learned log file in .agents/memory/lessons.md
+- Create a decisions log file in .agents/memory/decisions.md
+- Create an implementation log file in .agents/memory/implementation.md
 
 ## Session Start Protocol
 - Read .agents/memory/progress.md - current state

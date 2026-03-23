@@ -261,6 +261,49 @@ async function updatePrompt(key, prompt_text) {
     return await dbAsync.run('UPDATE Prompts SET prompt_text = ? WHERE key = ?', [prompt_text, key]);
 }
 
+/**
+ * Generates vector embeddings for a given text using the active provider.
+ * @param {string} text 
+ * @param {string} providerId 
+ * @returns {Promise<Array<number>>}
+ */
+async function generateEmbedding(text, providerId = null) {
+    try {
+        const active = providerId 
+            ? await dbAsync.get('SELECT * FROM ProviderConfigs WHERE provider_id = ?', [providerId])
+            : await dbAsync.get('SELECT * FROM ProviderConfigs WHERE is_active = 1');
+            
+        const provider = active ? active.provider_id : 'ollama';
+        const apiKey = active ? active.api_key : '';
+        
+        // For local Ollama, nomic-embed-text is standard.
+        // For OpenAI, text-embedding-3-small is standard.
+        let embedding = [];
+
+        if (provider === 'ollama') {
+            const response = await axios.post('http://localhost:11434/api/embeddings', {
+                model: 'nomic-embed-text', 
+                prompt: text
+            });
+            embedding = response.data.embedding;
+        } else if (provider === 'openai') {
+            const response = await axios.post('https://api.openai.com/v1/embeddings', {
+                model: 'text-embedding-3-small',
+                input: text
+            }, { headers: { Authorization: `Bearer ${apiKey}` } });
+            embedding = response.data.data[0].embedding;
+        } else {
+             console.warn(`[GenerateEmbedding] Provider '${provider}' not natively supported for embeddings yet.`);
+             return [];
+        }
+        
+        return embedding;
+    } catch (err) {
+        console.error('Vector Embedding failed:', err.message);
+        return [];
+    }
+}
+
 module.exports = {
     listModels,
     parseCvWithModel,
@@ -269,5 +312,6 @@ module.exports = {
     getProviderConfigs,
     updateProviderConfig,
     getPrompts,
-    updatePrompt
+    updatePrompt,
+    generateEmbedding
 };

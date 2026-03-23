@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { dbAsync } = require('../db');
 const { parseJobListings } = require('../services/aiService');
+const vectorService = require('../services/vectorService');
 const axios = require('axios');
 
 let scrapeStatus = 'idle';
@@ -239,10 +240,14 @@ router.post('/scrape', async (req, res) => {
                 
                 scrapeStatus = 'saving';
                 for (const job of jobs) {
-                     await dbAsync.run(
+                     const insertRes = await dbAsync.run(
                          'INSERT INTO JobListings (source_id, company_name, role_title, location, salary_range, description, apply_link) VALUES (?,?,?,?,?,?,?)',
                          [source.id, source.name || job.company_name || 'Unknown', job.role_title || 'Position', job.location || '', job.salary_range || '', job.description || '', job.apply_link || source.url]
                      );
+                     // Instantly sync the scraped result into LanceDB 
+                     if (insertRes && insertRes.lastID) {
+                         await vectorService.indexJob(insertRes.lastID, job.role_title || 'Position', job.description || '');
+                     }
                 }
                 await dbAsync.run('UPDATE JobSources SET last_scraped_at = CURRENT_TIMESTAMP, last_scraped_content = ? WHERE id = ?', [pageData, source.id]);
             } catch (innerErr) {
