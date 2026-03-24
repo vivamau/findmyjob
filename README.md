@@ -41,7 +41,7 @@ Your backend strictly uses Squashed migrators. Starting or testing the applicati
 ### 3. Run Application
 ```bash
 # Start server defaults bind to PORT 3000
-npm start
+npm run dev
 ```
 
 ### 4. Running TDD Tests

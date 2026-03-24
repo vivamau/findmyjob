@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Sparkles } from 'lucide-react';
+import { useLocation } from 'react-router-dom';
+import { Sparkles, X } from 'lucide-react';
 import api from '../utils/api';
 import JobCard from './components/JobCard';
 import CustomDropdown from './components/CustomDropdown';
@@ -8,6 +9,8 @@ import Pagination from './components/Pagination';
 import SearchHeader from './components/SearchHeader';
 
 export default function JobSearch() {
+  const location = useLocation();
+  const [minScore, setMinScore] = useState<number | null>(location.state?.minScore ?? null);
   const [query, setQuery] = useState('');
   const [jobs, setJobs] = useState<any[]>([]);
   const [resumes, setResumes] = useState<any[]>([]);
@@ -58,7 +61,10 @@ export default function JobSearch() {
               const res = await api.get('/cv');
               if (Array.isArray(res.data)) {
                   setResumes(res.data);
-                  if (res.data.length > 0 && !selectedCvId) setSelectedCvId(res.data[0].id.toString());
+                  if (res.data.length > 0 && !selectedCvId) {
+                      const primaryCv = res.data.find((c: any) => c.is_primary === 1) || res.data[0];
+                      setSelectedCvId(primaryCv.id.toString());
+                  }
               }
           } catch (err) {
               console.error('Fetch resumes failed, retrying...', err);
@@ -117,15 +123,22 @@ export default function JobSearch() {
       }
   };
 
-  const filteredJobs = isSemantic && semanticResults !== null
+  const baseFilteredJobs = isSemantic && semanticResults !== null
       ? semanticResults.map(sr => {
             const match = jobs.find(j => j.id.toString() === sr.job_id.toString());
             return match ? { ...match, semantic_distance: sr.distance } : null;
-        }).filter(Boolean)
+        }).filter(Boolean) as any[]
       : jobs.filter(j =>
             (j.role_title || '').toLowerCase().includes(query.toLowerCase()) ||
             (j.company_name || '').toLowerCase().includes(query.toLowerCase())
         );
+
+  const filteredJobs = minScore !== null
+      ? baseFilteredJobs.filter(j => {
+            const score = batchScores[String(j.id)]?.match_score ?? j.match_score ?? 0;
+            return score >= minScore;
+        })
+      : baseFilteredJobs;
 
   const sortedJobs = [...filteredJobs].sort((a: any, b: any) => {
       let valA: any = '';
@@ -278,25 +291,37 @@ export default function JobSearch() {
         </div>
       </div>
 
-      <div className="flex justify-end items-center gap-3 mb-4 mt-2">
-        <span className="text-xs font-medium text-secondary">Sort by:</span>
-        <select 
-            value={sortBy} 
-            onChange={(e) => setSortBy(e.target.value as any)}
-            className="bg-black/40 border border-white/10 hover:border-white/20 px-3 py-1.5 rounded-lg text-sm transition-all focus:outline-none backdrop-blur-md text-primary cursor-pointer"
-        >
-            <option value="score">CV Match Score</option>
-            <option value="date">Publish Date</option>
-            <option value="title">Job Title</option>
-        </select>
-        <select 
-            value={sortOrder} 
-            onChange={(e) => setSortOrder(e.target.value as any)}
-            className="bg-black/40 border border-white/10 hover:border-white/20 px-3 py-1.5 rounded-lg text-sm transition-all focus:outline-none backdrop-blur-md text-primary cursor-pointer"
-        >
-            <option value="desc">Descending</option>
-            <option value="asc">Ascending</option>
-        </select>
+      <div className="flex justify-between items-center mb-4 mt-2">
+        <div>
+          {minScore !== null && (
+            <div className="flex items-center gap-1.5 bg-accent-secondary/10 border border-accent-secondary/20 text-accent-secondary px-2.5 py-1 rounded-full text-xs font-semibold backdrop-blur-sm shadow-[0_0_15px_rgba(139,92,246,0.1)]">
+              <span>Match Score &ge; {minScore}%</span>
+              <button onClick={() => setMinScore(null)} className="hover:text-white transition-colors" aria-label="Clear filter">
+                <X size={12} />
+              </button>
+            </div>
+          )}
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="text-xs font-medium text-secondary">Sort by:</span>
+          <select 
+              value={sortBy} 
+              onChange={(e) => setSortBy(e.target.value as any)}
+              className="bg-black/40 border border-white/10 hover:border-white/20 px-3 py-1.5 rounded-lg text-sm transition-all focus:outline-none backdrop-blur-md text-primary cursor-pointer"
+          >
+              <option value="score">CV Match Score</option>
+              <option value="date">Publish Date</option>
+              <option value="title">Job Title</option>
+          </select>
+          <select 
+              value={sortOrder} 
+              onChange={(e) => setSortOrder(e.target.value as any)}
+              className="bg-black/40 border border-white/10 hover:border-white/20 px-3 py-1.5 rounded-lg text-sm transition-all focus:outline-none backdrop-blur-md text-primary cursor-pointer"
+          >
+              <option value="desc">Descending</option>
+              <option value="asc">Ascending</option>
+          </select>
+        </div>
       </div>
 
       <div ref={topRef} className="pt-2" />

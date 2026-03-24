@@ -1,5 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
+import { MemoryRouter } from 'react-router-dom';
 import Dashboard from '../Dashboard';
 import api from '../../utils/api';
 
@@ -14,7 +15,7 @@ describe('Dashboard Component', () => {
             .mockResolvedValueOnce({ data: { status: 'ok' } }) // /health
             .mockResolvedValueOnce({ data: [{ id: 1, title: 'Mock CV', creates_at: '2023-10-24', last_parse_at: '2023-10-24T12:00:00Z', parse_model: 'llama3' }] }); 
 
-         render(<Dashboard />);
+         render(<MemoryRouter><Dashboard /></MemoryRouter>);
 
          expect(screen.getByText('Dashboard')).toBeInTheDocument();
          

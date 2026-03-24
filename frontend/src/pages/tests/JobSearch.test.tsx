@@ -1,5 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
+import { MemoryRouter } from 'react-router-dom';
 import JobSearch from '../JobSearch';
 import api from '../../utils/api';
 
@@ -16,7 +17,7 @@ describe('JobSearch Component', () => {
              return Promise.resolve({ data: [] });
          });
 
-         render(<JobSearch />);
+         render(<MemoryRouter><JobSearch /></MemoryRouter>);
 
          await waitFor(() => expect(screen.getByText('TestCorp')).toBeInTheDocument());
          expect(screen.getByText('Software Dev')).toBeInTheDocument();
@@ -29,7 +30,7 @@ describe('JobSearch Component', () => {
          });
          (api.post as jest.Mock).mockResolvedValue({ data: { message: 'Sync complete', successCount: 1 } });
 
-         const { getByText } = render(<JobSearch />);
+         const { getByText } = render(<MemoryRouter><JobSearch /></MemoryRouter>);
          // Wait for jobs to render and batch match to run or button to appear flaws
          await waitFor(() => expect(getByText('Sync Match Index')).toBeInTheDocument());
 

@@ -112,7 +112,10 @@ export default function Dashboard() {
           </div>
         </div>
 
-        <div className="glass-card flex items-center justify-between">
+        <div 
+          className="glass-card flex items-center justify-between cursor-pointer hover:bg-white/5 hover:scale-[1.02] transition-all duration-300"
+          onClick={() => navigate('/search', { state: { minScore: 60 } })}
+        >
           <div>
             <p className="text-secondary text-sm font-medium">Auto-Matches Found</p>
             <h3 className="text-3xl mt-2">{autoMatchCount}</h3>
