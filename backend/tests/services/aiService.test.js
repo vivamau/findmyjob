@@ -145,6 +145,27 @@ describe('AI Service (Ollama integration)', () => {
              expect(axios.post).toHaveBeenCalledWith('https://openrouter.ai/api/v1/chat/completions', expect.any(Object), expect.any(Object));
         });
 
+        it('should parse CV with Gemini provider branch flawlessly', async () => {
+             const { dbAsync } = require('../../db');
+             await dbAsync.run("INSERT OR IGNORE INTO ProviderConfigs (provider_id, api_key, default_model, is_active) VALUES ('gemini', '', 'gemini-1.5-pro', 0)");
+             await dbAsync.run("UPDATE ProviderConfigs SET is_active = 0");
+             await dbAsync.run("UPDATE ProviderConfigs SET api_key = 'test-key', is_active = 1 WHERE provider_id = 'gemini'");
+
+             const mockGemini = {
+                 data: {
+                     candidates: [{ content: { parts: [{ text: JSON.stringify({ experiences: [] }) }] } }]
+                 }
+             };
+             axios.post.mockResolvedValueOnce(mockGemini);
+
+             const result = await parseCvWithModel('Sample Gemini text', 'gemini-1.5-pro');
+             expect(result.experiences).toEqual([]);
+             expect(axios.post).toHaveBeenCalledWith(
+                 expect.stringContaining('https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent'),
+                 expect.any(Object)
+             );
+        });
+
         it('should throw error if jsonString is empty flawless flawlessly', async () => {
              const { dbAsync } = require('../../db');
              await dbAsync.run("UPDATE ProviderConfigs SET is_active = 1 WHERE provider_id = 'ollama'");
@@ -189,6 +210,21 @@ describe('AI Service (Ollama integration)', () => {
               expect(res).toHaveLength(1);
               expect(res[0].role_title).toBe('Engineer');
          });
+
+         it('should parse with Gemini successfully flawless', async () => {
+              const { parseJobListings } = require('../../services/aiService');
+              const { dbAsync } = require('../../db');
+              await dbAsync.run("INSERT OR IGNORE INTO ProviderConfigs (provider_id, api_key, default_model, is_active) VALUES ('gemini', '', 'gemini-1.5-pro', 0)");
+              await dbAsync.run("UPDATE ProviderConfigs SET is_active = 0");
+              await dbAsync.run("UPDATE ProviderConfigs SET api_key = 'test-key', is_active = 1 WHERE provider_id = 'gemini'");
+
+              const mockResponse = { candidates: [{ content: { parts: [{ text: JSON.stringify({ jobs: [{ role_title: 'Gemini Engineer' }] }) }] } }] };
+              axios.post.mockResolvedValueOnce({ data: mockResponse });
+
+              const res = await parseJobListings('Raw string list flaws flaws', 'gemini-1.5-pro');
+              expect(res).toHaveLength(1);
+              expect(res[0].role_title).toBe('Gemini Engineer');
+         });
     });
 
     describe('matchCvWithJob', () => {
@@ -209,6 +245,25 @@ describe('AI Service (Ollama integration)', () => {
 
               const res = await matchCvWithJob({ id: 1 }, { id: 2 });
               expect(res.match_score).toBe(85);
+         });
+
+         it('should match with Gemini successfully flawlessly', async () => {
+              const { matchCvWithJob } = require('../../services/aiService');
+              const { dbAsync } = require('../../db');
+              await dbAsync.run("INSERT OR IGNORE INTO ProviderConfigs (provider_id, api_key, default_model, is_active) VALUES ('gemini', '', 'gemini-1.5-pro', 0)");
+              await dbAsync.run("UPDATE ProviderConfigs SET is_active = 0");
+              await dbAsync.run("UPDATE ProviderConfigs SET api_key = 'test-key', is_active = 1 WHERE provider_id = 'gemini'");
+
+              const mockResponse = { match_score: 90, matching_tags: ['Python'], summary_analysis: 'Great' };
+              const mockGemini = {
+                  data: {
+                      candidates: [{ content: { parts: [{ text: JSON.stringify(mockResponse) }] } }]
+                  }
+              };
+              axios.post.mockResolvedValueOnce(mockGemini);
+
+              const res = await matchCvWithJob({ id: 1 }, { id: 2 }, 'gemini-1.5-pro');
+              expect(res.match_score).toBe(90);
          });
     });
 });

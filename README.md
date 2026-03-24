@@ -80,6 +80,58 @@ npm run build
 
 ---
 
+## 🔄 Data Ingestion & Processing Flow
+
+The pipeline involves **Fetch Providers**, **AI-Assisted Structuring**, **Vector Storage Sync**, and **Reasoning Models Throttling**.
+
+```mermaid
+graph TD
+    A[User / Cron Trigger] -->|POST /api/jobs/scrape| B[Job Ingestion Pipeline]
+    
+    subgraph "1. Data Scraping Phase"
+        B --> C{Read Active JobSources}
+        C -->|Workday Sites| D[Direct JSON API Adapter]
+        C -->|Standard Sites| E[Static axios.get]
+        E -->|Anti-bot / Heavy JS| F[Puppeteer browser.content fallback]
+    end
+
+    subgraph "2. AI Parsing & Verification"
+        D --> G[Job Object Pack]
+        E --> G
+        F --> G
+        G --> H[Clean & Substring HTML Content]
+        H --> I[LLM: parseJobListings]
+        I -->|Return| J[Structured Job Listing Array]
+        
+        J --> K[Follow Deeper Detail Links]
+        K --> L[LLM: summarizeJobDescription]
+        L --> M[Hydrate Detailed Description]
+    end
+
+    subgraph "3. Storage & Semantic Sync"
+        M --> N[Save to SQLite: JobListings Table]
+        N --> O[vectorService.indexJob]
+        O --> P[Embed with LanceDB Vector Space]
+    end
+
+    subgraph "4. CV Matching & Scoring"
+        Q[User Selection / Matches Route] --> R[Extract Resume CV Text]
+        R --> S[LLM: matchCvWithJob]
+        S --> T[Generate match_score & feedback_tags]
+        T --> U[Save Score and Return Results]
+    end
+
+    P -.->|Job Vector Search| S
+```
+
+### 🛠️ Components Breakdown
+* **Scraper (`jobRoutes.js`)**: Static (`axios`) or Dynamic (`Puppeteer`) fetch nodes.
+* **AI Extract (`aiService.js`)**: Structuring raw text via context.
+* **Vector Index (`vectors`)**: Instant sync with **LanceDB**.
+* **Matcher**: Relevancy score generations flawlessly.
+
+---
+
 ## 🏆 Current Key Systems Built
 - ✅ **Secure CV Text Parsing streams** (Utilizing memory buffer disk storage pipes using `pdf-parse`)
 - ✅ **Database schema tables** (Indexing Applications, Resumes cleanly mapped correctly)

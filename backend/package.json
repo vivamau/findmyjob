@@ -26,6 +26,7 @@
     "express": "^5.2.1",
     "jsonwebtoken": "^9.0.3",
     "multer": "^2.1.1",
+    "ollama": "^0.6.3",
     "pdf-parse": "^1.1.4",
     "puppeteer": "^24.39.1",
     "sqlite3": "^6.0.1"

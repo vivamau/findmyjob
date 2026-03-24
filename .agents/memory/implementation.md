@@ -11,14 +11,28 @@
 ## Phase 2 (Planning)
 **Plan:** Incorporating the new vector search into the existing Job Search visual UI and managing database propagation synchronization.
 
-**Architecture:**
-- **Sync Script:** `backend/scripts/syncLanceDB.js` loops through `JobListings` and pipes them into our vector service index map.
-- **Auto-Sync Hook:** `jobRoutes.js` `/api/jobs/scrape` route will instantly invoke `vectorService.indexJob` for real-time scraped jobs.
-- **React Frontend (`JobSearch.tsx` & `SearchHeader.tsx`):**
-    - Adding a toggle/button for identifying an "AI Semantic Match".
-    - Hooking the state up to query `/api/search/semantic`.
-    - Mapping LanceDB returned `job_id` distances directly onto standard hydrated jobs for seamless UI injection, preserving all local design filters.
+## Gemini Pro Integration
 
-**Verification Steps:**
-1. Manually trigger `syncLanceDB.js` in terminal.
-2. Validate UI Semantic queries effectively filter the list via contextual queries rather than explicit string keywords.
+**Date:** 2026-03-24
+
+**Completed:**
+- Created migration `006_add_gemini_provider.sql` to seed `gemini` in `ProviderConfigs`.
+- Updated `aiService.js` adding `provider === 'gemini'` branches for:
+    - `parseJobListings` (JSON response)
+    - `parseCvWithModel` (JSON response)
+    - `matchCvWithJob` (JSON response)
+    - `summarizeJobDescription` (Text response)
+- Verified with unit tests using mock candidates response format for Gemini REST API.
+
+## Token Usage Tracking
+
+**Date:** 2026-03-24
+
+**Completed:**
+- Created migration `007_token_usage_table.sql` with `started_at` & `ended_at` for operation time analytics.
+- Added `logTokenUsage` helper inside `aiService.js`.
+- Configured providers branches in `parseCvWithModel`, `parseJobListings`, `matchCvWithJob`, `summarizeJobDescription` to extract:
+  - **Ollama**: `prompt_eval_count`, `eval_count`
+  - **OpenAI / OpenRouter / Perplexity**: `usage.prompt_tokens` / `usage.completion_tokens`
+  - **Claude**: `usage.input_tokens` / `usage.output_tokens`
+  - **Gemini**: `usageMetadata.promptTokenCount` / `usageMetadata.candidatesTokenCount`
