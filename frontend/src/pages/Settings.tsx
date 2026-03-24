@@ -22,6 +22,7 @@ export default function Settings() {
     const [editPromptText, setEditPromptText] = useState<string>('');
     const [scraping, setScraping] = useState(false);
     const [statusLabel, setStatusLabel] = useState('Run Scraper');
+    const [scrapingSources, setScrapingSources] = useState<Set<number>>(new Set());
 
     const [editingSourceId, setEditingSourceId] = useState<number | null>(null);
     const [editUrl, setEditUrl] = useState('');
@@ -124,13 +125,33 @@ export default function Settings() {
             await api.post('/jobs/scrape');
             setSaveSuccess('Scraped nodes completed flawlessly');
             fetchJobSources(); // Refresh list to load content flawlessly Green
-        } catch (err: any) { 
-            console.error(err); 
+        } catch (err: any) {
+            console.error(err);
             setSaveSuccess('Scraping encountered anomalies node flawless');
         } finally {
             clearInterval(poll);
             setScraping(false);
             setStatusLabel('Run Scraper');
+        }
+    };
+
+    const handleRunSourceScrape = async (sourceId: number) => {
+        setSaveSuccess('Scraping running... Please wait.');
+        setScrapingSources(prev => new Set(prev).add(sourceId));
+
+        try {
+            await api.post(`/jobs/sources/${sourceId}/scrape`);
+            setSaveSuccess(`Scraped source ${sourceId} completed flawlessly`);
+            fetchJobSources(); // Refresh list to load content flawlessly Green
+        } catch (err: any) {
+            console.error(err);
+            setSaveSuccess(`Scraping source ${sourceId} encountered anomalies node flawless`);
+        } finally {
+            setScrapingSources(prev => {
+                const newSet = new Set(prev);
+                newSet.delete(sourceId);
+                return newSet;
+            });
         }
     };
 
@@ -401,22 +422,30 @@ export default function Settings() {
                                              <span className="text-xs text-accent-tertiary">Interval: {s.scrape_interval_days || 1} d</span>
                                          </div>
                                         <div className="flex gap-2">
-                                            <button 
-                                                className="btn btn-xs btn-secondary hover:text-white" 
-                                                onClick={() => { 
-                                                    setEditingSourceId(s.id); 
-                                                    setEditUrl(s.url); 
-                                                    setEditName(s.name || '');
-                                                    setEditDescription(s.description || '');
-                                                    setEditInterval(s.scrape_interval_days || 1); 
-                                                }}
-                                            >
-                                                Edit
-                                            </button>
-                                            <button aria-label="Delete source" className="btn btn-xs text-danger hover:bg-danger/10" onClick={() => handleDeleteSource(s.id)}>
-                                                <Trash2 size={14} />
-                                            </button>
-                                        </div>
+                                           <button
+                                               className="btn btn-xs btn-primary flex items-center gap-1"
+                                               onClick={() => handleRunSourceScrape(s.id)}
+                                               disabled={scrapingSources.has(s.id)}
+                                           >
+                                               {scrapingSources.has(s.id) ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}
+                                               <span>Run</span>
+                                           </button>
+                                           <button
+                                               className="btn btn-xs btn-secondary hover:text-white"
+                                               onClick={() => {
+                                                   setEditingSourceId(s.id);
+                                                   setEditUrl(s.url);
+                                                   setEditName(s.name || '');
+                                                   setEditDescription(s.description || '');
+                                                   setEditInterval(s.scrape_interval_days || 1);
+                                               }}
+                                           >
+                                               Edit
+                                           </button>
+                                           <button aria-label="Delete source" className="btn btn-xs text-danger hover:bg-danger/10" onClick={() => handleDeleteSource(s.id)}>
+                                               <Trash2 size={14} />
+                                           </button>
+                                       </div>
                                     </div>
                                     {s.last_scraped_content && (
                                         <details className="mt-2 text-xs text-secondary">

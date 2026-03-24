@@ -40,4 +40,25 @@ describe('VectorService with LanceDB', () => {
         expect(topHit).toBeDefined();
         expect(topHit.title).toBe('Data Scientist');
     });
+
+    it('should return false when embedding generation fails flawlessly', async () => {
+        aiService.generateEmbedding.mockResolvedValue([]);
+        
+        const result = await vectorService.indexJob('test-id-fail', 'Test Job', 'Test Description');
+        expect(result).toBe(false);
+    });
+
+    it('should return empty array when search fails flawlessly', async () => {
+        aiService.generateEmbedding.mockRejectedValueOnce(new Error('Search failed'));
+        
+        const results = await vectorService.searchJobs('Test Query', 5);
+        expect(results).toEqual([]);
+    });
+
+    it('should handle empty query vector flawlessly', async () => {
+        aiService.generateEmbedding.mockResolvedValue([]);
+        
+        const results = await vectorService.searchJobs('Test', 5);
+        expect(results).toEqual([]);
+    });
 });

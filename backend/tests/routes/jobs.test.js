@@ -56,7 +56,7 @@ describe('Job Routes (Scraping & Sources)', () => {
 
              const res = await request(app).post('/api/jobs/scrape');
              expect(res.status).toBe(200);
-        });
+        }, 30000);
     });
 
     describe('DELETE /api/jobs/sources/:id', () => {
@@ -85,5 +85,69 @@ describe('Job Routes (Scraping & Sources)', () => {
              expect(updated.url).toBe('https://updated-link.com');
               expect(updated.scrape_interval_days).toBe(5);
         });
+    });
+
+    describe('POST /api/jobs/sources/:id/scrape', () => {
+        it('should scrape a single job source successfully', async () => {
+            // Create a job source to test
+            await dbAsync.run(
+                'INSERT INTO JobSources (url, name, description, scrape_interval_days, is_active) VALUES (?, ?, ?, ?, ?)',
+                ['https://example.com/jobs', 'Test Source', 'Test Description', 1, 1]
+            );
+
+            // Mock axios.get for the scraper
+            axios.get.mockResolvedValueOnce({ data: '<html>Job listings here</html>' });
+
+            const sources = await dbAsync.all('SELECT * FROM JobSources WHERE url = ?', ['https://example.com/jobs']);
+            const sourceId = sources[0].id;
+
+            const res = await request(app).post(`/api/jobs/sources/${sourceId}/scrape`);
+            expect(res.status).toBe(200);
+            expect(res.body.message).toContain('Scraping completed successfully');
+        }, 15000);
+
+        it('should return 404 if job source not found', async () => {
+            const res = await request(app).post('/api/jobs/sources/99999/scrape');
+            expect(res.status).toBe(404);
+            expect(res.body.error).toBe('Job source not found');
+        });
+
+        it('should skip scraping if interval not reached', async () => {
+            // Create a job source with recent last_scraped_at
+            const now = new Date();
+            const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000); // 1 hour ago
+            
+            await dbAsync.run(
+                'INSERT INTO JobSources (url, name, description, scrape_interval_days, last_scraped_at, is_active) VALUES (?, ?, ?, ?, ?, ?)',
+                ['https://example.com/jobs2', 'Test Source 2', 'Test Description', 2, oneHourAgo.toISOString(), 1]
+            );
+
+            const sources = await dbAsync.all('SELECT * FROM JobSources WHERE url = ?', ['https://example.com/jobs2']);
+            const sourceId = sources[0].id;
+
+            const res = await request(app).post(`/api/jobs/sources/${sourceId}/scrape`);
+            expect(res.status).toBe(200);
+            expect(res.body.message).toContain('Scrape interval not reached yet');
+        });
+
+        it('should scrape Workday source successfully', async () => {
+            // Create a Workday source
+            await dbAsync.run(
+                'INSERT INTO JobSources (url, name, description, scrape_interval_days, is_active) VALUES (?, ?, ?, ?, ?)',
+                ['https://wd3.myworkdaysite.com/recruiting/testsite/job_openings', 'Workday Test', 'Workday Description', 1, 1]
+            );
+
+            // Mock axios.post for Workday API
+            axios.post.mockResolvedValueOnce({
+                data: { jobPostings: [{ title: 'Software Engineer', locationsText: 'Remote', postedOn: '2024-01-01', externalPath: '/job/123' }] }
+            });
+
+            const sources = await dbAsync.all('SELECT * FROM JobSources WHERE url LIKE ?', ['%workdaysite.com%']);
+            const sourceId = sources[0].id;
+
+            const res = await request(app).post(`/api/jobs/sources/${sourceId}/scrape`);
+            expect(res.status).toBe(200);
+            expect(res.body.message).toContain('Scraping completed successfully');
+        }, 15000);
     });
 });

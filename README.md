@@ -10,17 +10,80 @@ Following strict deployment standards, the project is segregated into standalone
 
 ```text
 findmyjob/
+├── .agents/            # Agent configuration files
 ├── backend/            # Express, Node.js + SQLite Service Layer
+│   ├── app.js          # Express application setup
+│   ├── index.js        # Application entry point
+│   ├── config/         # Configuration files
+│   ├── coverage/       # Test coverage reports
+│   ├── data/           # SQLite database files
 │   ├── db/             # SQLite Initializers
+│   ├── middleware/     # Express middleware
 │   ├── migrations/     # SQL Migration buckets (e.g., 001_initial.sql)
 │   ├── routes/         # Express API routing nodes
+│   │   ├── aiRoutes.js
+│   │   ├── applicationRoutes.js
+│   │   ├── cvRoutes.js
+│   │   ├── jobRoutes.js
+│   │   └── searchRoutes.js
+│   ├── scripts/        # Utility scripts
+│   │   ├── run_migrations.js
+│   │   ├── seed_userroles.js
+│   │   ├── seed_users.js
+│   │   └── syncLanceDB.js
 │   ├── services/       # Business logic layer (CV Parsing/Saving)
-│   └── tests/          # TDD Jest test suite isolated streams
-└── frontend/           # Vite + React (TypeScript) Visuals
-    ├── src/
-    │   ├── commoncomponents/ # UI Building blocks (TDD checked)
-    │   └── pages/      # Views (Dashboard, Tracking table, CV manager)
-    └── docs/           # Output static folder allocations
+│   │   ├── aiService.js
+│   │   ├── cvService.js
+│   │   ├── scraperService.js
+│   │   └── vectorService.js
+│   ├── tests/          # TDD Jest test suite isolated streams
+│   │   ├── health.test.js
+│   │   ├── routes/     # Route tests
+│   │   └── services/   # Service tests
+│   ├── uploads/        # File upload storage
+│   ├── utilities/      # Utility functions
+│   └── utils/          # Additional utilities
+├── frontend/           # Vite + React (TypeScript) Visuals
+│   ├── coverage/       # Test coverage reports
+│   ├── docs/           # Documentation
+│   ├── public/         # Static assets
+│   ├── src/
+│   │   ├── assets/     # Image assets
+│   │   ├── commoncomponents/ # UI Building blocks (TDD checked)
+│   │   │   └── tests/   # Component tests
+│   │   ├── components/ # Shared components
+│   │   ├── hooks/      # React hooks
+│   │   ├── layouts/    # Layout components
+│   │   ├── pages/      # Views (Dashboard, Tracking table, CV manager)
+│   │   │   ├── components/ # Page-specific components
+│   │   │   │   ├── CustomDropdown.tsx
+│   │   │   │   ├── JobCard.tsx
+│   │   │   │   ├── Pagination.tsx
+│   │   │   │   ├── SearchHeader.tsx
+│   │   │   │   └── tests/   # Component tests
+│   │   │   ├── tests/   # Page tests
+│   │   │   ├── CVManager.tsx
+│   │   │   ├── Dashboard.tsx
+│   │   │   ├── JobSearch.tsx
+│   │   │   ├── Settings.tsx
+│   │   │   └── Tracker.tsx
+│   │   └── utils/      # Utility functions
+│   │   ├── App.tsx
+│   │   ├── App.css
+│   │   ├── index.css
+│   │   ├── main.tsx
+│   │   └── setupTests.ts
+│   ├── __mocks__/      # Test mocks
+│   ├── eslint.config.js
+│   ├── jest.config.js
+│   ├── postcss.config.js
+│   ├── tailwind.config.js
+│   ├── vite.config.ts
+│   ├── tsconfig.json
+│   ├── tsconfig.app.json
+│   └── tsconfig.node.json
+├── scrape_taleo.js     # Standalone scraper script
+└── README.md
 ```
 
 ---

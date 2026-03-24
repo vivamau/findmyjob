@@ -145,6 +145,17 @@ async function parseJobListings(htmlText, model) {
                 tokensIn = res.data.usageMetadata.promptTokenCount;
                 tokensOut = res.data.usageMetadata.candidatesTokenCount;
             }
+        } else if (provider === 'glm') {
+            const res = await axios.post('https://open.bigmodel.cn/api/paas/v4/chat/completions', {
+                model: selectedModel || 'glm-4',
+                messages: [{ role: 'user', content: prompt }],
+                response_format: { type: 'json_object' }
+            }, { headers: { 'Authorization': `Bearer ${apiKey}` } });
+            responseText = res.data.choices[0].message.content;
+            if (res.data.usage) {
+                tokensIn = res.data.usage.prompt_tokens;
+                tokensOut = res.data.usage.completion_tokens;
+            }
         }
 
         await logTokenUsage(selectedModel, 'parseJobListings', tokensIn, tokensOut, startTime);
@@ -166,6 +177,11 @@ async function parseJobListings(htmlText, model) {
         console.error('Job Parse failed:', err.message, err.config ? `at ${err.config.url}` : '');
         if (err.response) {
             console.error(`[${provider.toUpperCase()}] Response Error body:`, typeof err.response.data === 'string' ? err.response.data : JSON.stringify(err.response.data));
+        }
+        // Provide more helpful error message for JSON parsing issues
+        if (err.message.includes('JSON')) {
+            console.error(`[AI_PARSE] JSON Parsing Error - Model ${selectedModel} may have returned malformed JSON.`);
+            console.error(`[AI_PARSE] Raw response (first 500 chars): ${responseText.substring(0, 500)}`);
         }
         return [];
     }
@@ -278,6 +294,17 @@ async function parseCvWithModel(cvText, model, providerId = null) {
                 tokensIn = response.data.usageMetadata.promptTokenCount;
                 tokensOut = response.data.usageMetadata.candidatesTokenCount;
             }
+        } else if (provider === 'glm') {
+            const response = await axios.post('https://open.bigmodel.cn/api/paas/v4/chat/completions', {
+                model: model || 'glm-4',
+                messages: [{ role: 'user', content: `${prompt}\n\nYou MUST respond ONLY with valid JSON.` }],
+                response_format: { type: 'json_object' }
+            }, { headers: { 'Authorization': `Bearer ${apiKey}` } });
+            jsonString = response.data.choices[0].message.content;
+            if (response.data.usage) {
+                tokensIn = response.data.usage.prompt_tokens;
+                tokensOut = response.data.usage.completion_tokens;
+            }
         }
 
         await logTokenUsage(model, 'parseCv', tokensIn, tokensOut, startTime);
@@ -316,6 +343,11 @@ async function parseCvWithModel(cvText, model, providerId = null) {
         if (err.response) {
             console.error(`[${provider.toUpperCase()}] Response Error body:`, typeof err.response.data === 'string' ? err.response.data : JSON.stringify(err.response.data));
         }
+        // Provide more helpful error message for JSON parsing issues
+        if (err.message.includes('JSON')) {
+            console.error(`[AI_PARSE] JSON Parsing Error - Model ${model} may have returned malformed JSON.`);
+            console.error(`[AI_PARSE] Raw response (first 500 chars): ${jsonString.substring(0, 500)}`);
+        }
         throw new Error('AI Parse execution failed');
     }
 }
@@ -326,6 +358,7 @@ async function parseCvWithModel(cvText, model, providerId = null) {
 async function matchCvWithJob(cv, job, model) {
     let provider = 'ollama';
     const startTime = new Date().toISOString();
+    let responseText = ''; // Declare outside try block to ensure it's available in catch
     try {
         const promptTemplate = await getPrompt('match_cv_with_job');
         const prompt = promptTemplate
@@ -336,8 +369,6 @@ async function matchCvWithJob(cv, job, model) {
         provider = active ? active.provider_id : 'ollama';
         const apiKey = active ? active.api_key : '';
         const selectedModel = model || (active && active.default_model) || 'llama3';
-
-        let responseText = '';
         let tokensIn = 0, tokensOut = 0;
 
         if (provider === 'ollama') {
@@ -356,20 +387,64 @@ async function matchCvWithJob(cv, job, model) {
                     format: 'json',
                     options: { temperature: 0.1 }
                 });
-                responseText = response.response;
-                tokensIn = response.prompt_eval_count || 0;
-                tokensOut = response.eval_count || 0;
+                
+                // Check for empty response
+                if (!response.response || response.response.trim() === '') {
+                    console.error(`[AI_MATCH] Empty response from Ollama cloud model '${selectedModel}'. Retrying without format: json...`);
+                    const retryResponse = await ollamaClient.generate({
+                        model: selectedModel,
+                        prompt: prompt,
+                        stream: false,
+                        options: { temperature: 0.1 }
+                    });
+                    if (!retryResponse.response || retryResponse.response.trim() === '') {
+                        throw new Error(`Empty response from Ollama cloud model '${selectedModel}'. The model may not be properly configured.`);
+                    }
+                    responseText = retryResponse.response;
+                    tokensIn = retryResponse.prompt_eval_count || 0;
+                    tokensOut = retryResponse.eval_count || 0;
+                } else {
+                    responseText = response.response;
+                    tokensIn = response.prompt_eval_count || 0;
+                    tokensOut = response.eval_count || 0;
+                }
             } else {
-                const res = await axios.post(`${baseUrl}/api/generate`, {
-                    model: selectedModel,
-                    prompt: prompt,
-                    stream: false,
-                    format: "json",
-                    options: { temperature: 0.1 }
-                }, { headers });
-                responseText = res.data.response;
-                tokensIn = res.data.prompt_eval_count || 0;
-                tokensOut = res.data.eval_count || 0;
+                try {
+                    let res = await axios.post(`${baseUrl}/api/generate`, {
+                        model: selectedModel,
+                        prompt: prompt,
+                        stream: false,
+                        format: "json",
+                        options: { temperature: 0.1 }
+                    }, { headers });
+                    
+                    // Check for empty response and retry without format: json
+                    if (!res.data.response || res.data.response.trim() === '') {
+                        console.warn(`[AI_MATCH] Empty response from Ollama model '${selectedModel}' with format: json. Retrying without format parameter...`);
+                        res = await axios.post(`${baseUrl}/api/generate`, {
+                            model: selectedModel,
+                            prompt: prompt,
+                            stream: false,
+                            options: { temperature: 0.1 }
+                        }, { headers });
+                    }
+                    
+                    // Check for empty response after retry
+                    if (!res.data.response || res.data.response.trim() === '') {
+                        throw new Error(`Empty response from Ollama model '${selectedModel}'. The model may not be properly configured.`);
+                    }
+                    
+                    responseText = res.data.response;
+                    tokensIn = res.data.prompt_eval_count || 0;
+                    tokensOut = res.data.eval_count || 0;
+                } catch (axiosErr) {
+                    if (axiosErr.response) {
+                        console.error(`[AI_MATCH] Ollama API error:`, axiosErr.response.status, axiosErr.response.data);
+                    } else if (axiosErr.request) {
+                        console.error(`[AI_MATCH] Ollama API request failed:`, axiosErr.message);
+                    }
+                    throw axiosErr;
+                }
             }
         } else if (provider === 'openai') {
             const res = await axios.post('https://api.openai.com/v1/chat/completions', {
@@ -392,12 +467,23 @@ async function matchCvWithJob(cv, job, model) {
                 tokensIn = res.data.usageMetadata.promptTokenCount;
                 tokensOut = res.data.usageMetadata.candidatesTokenCount;
             }
+        } else if (provider === 'glm') {
+            const res = await axios.post('https://open.bigmodel.cn/api/paas/v4/chat/completions', {
+                model: selectedModel || 'glm-4',
+                messages: [{ role: 'user', content: prompt }],
+                response_format: { type: 'json_object' }
+            }, { headers: { 'Authorization': `Bearer ${apiKey}` } });
+            responseText = res.data.choices[0].message.content;
+            if (res.data.usage) {
+                tokensIn = res.data.usage.prompt_tokens;
+                tokensOut = res.data.usage.completion_tokens;
+            }
+        } else {
+            throw new Error(`Unknown provider: ${provider}`);
         }
 
         await logTokenUsage(selectedModel, 'matchCvWithJob', tokensIn, tokensOut, startTime);
 
-        console.log(`=== RAW MATCH RESPONSE ===\n${responseText}`);
-        
         const jsonMatch = responseText.match(/\{[\s\S]*\}/);
         const jsonString = jsonMatch ? jsonMatch[0] : responseText.trim();
 
@@ -408,9 +494,14 @@ async function matchCvWithJob(cv, job, model) {
             summary_analysis: parsed.summary_analysis || 'No analysis available.'
         };
     } catch (err) {
-        console.error('CV Match failed:', err.message);
+        console.error('[AI_MATCH] Error:', err.message);
         if (err.response) {
             console.error(`[${provider.toUpperCase()}] Response Error body:`, typeof err.response.data === 'string' ? err.response.data : JSON.stringify(err.response.data));
+        }
+        
+        // Provide more helpful error message for JSON parsing issues
+        if (err.message.includes('JSON') && responseText) {
+            console.error(`[AI_MATCH] Raw response (first 500 chars): ${responseText.substring(0, 500)}`);
         }
         return { match_score: 0, matching_tags: [], summary_analysis: 'Failed to compute CV match.' };
     }
@@ -490,6 +581,16 @@ async function summarizeJobDescription(fullText, model) {
             if (res.data.usageMetadata) {
                 tokensIn = res.data.usageMetadata.promptTokenCount;
                 tokensOut = res.data.usageMetadata.candidatesTokenCount;
+            }
+        } else if (provider === 'glm') {
+            const res = await axios.post('https://open.bigmodel.cn/api/paas/v4/chat/completions', {
+                model: selectedModel || 'glm-4',
+                messages: [{ role: 'user', content: prompt }]
+            }, { headers: { 'Authorization': `Bearer ${apiKey}` } });
+            responseText = res.data.choices[0].message.content;
+            if (res.data.usage) {
+                tokensIn = res.data.usage.prompt_tokens;
+                tokensOut = res.data.usage.completion_tokens;
             }
         }
 
@@ -597,6 +698,12 @@ async function generateEmbedding(text, providerId = null) {
                 model: 'text-embedding-3-small',
                 input: text
             }, { headers: { Authorization: `Bearer ${apiKey}` } });
+            embedding = response.data.data[0].embedding;
+        } else if (provider === 'glm') {
+            const response = await axios.post('https://open.bigmodel.cn/api/paas/v4/embeddings', {
+                model: 'embedding-2',
+                input: text
+            }, { headers: { 'Authorization': `Bearer ${apiKey}` } });
             embedding = response.data.data[0].embedding;
         } else {
              console.warn(`[GenerateEmbedding] Provider '${provider}' not natively supported for embeddings yet.`);
