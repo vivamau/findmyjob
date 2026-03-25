@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { TrendingUp, Database, Zap, Clock, RefreshCw } from 'lucide-react';
 import api from '../utils/api';
+import PieChart from './components/PieChart';
 
 interface TokenUsageRecord {
   id: number;
@@ -79,6 +80,37 @@ export default function TokenUsage() {
     fetchTokenUsage();
   }, []);
 
+  const COLORS = [
+    '#8b5cf6', '#10b981', '#f59e0b', '#3b82f6', 
+    '#ec4899', '#14b8a6', '#f43f5e', '#6366f1'
+  ];
+
+  const modelChartData = useMemo(() => {
+    const map = new Map<string, number>();
+    summary.forEach(item => {
+      const val = map.get(item.model_used) || 0;
+      map.set(item.model_used, val + item.total_tokens_in + item.total_tokens_out);
+    });
+    return Array.from(map.entries())
+      .sort((a, b) => b[1] - a[1])
+      .map(([label, value], index) => ({
+        label, value, color: COLORS[index % COLORS.length]
+      }));
+  }, [summary]);
+
+  const operationChartData = useMemo(() => {
+    const map = new Map<string, number>();
+    summary.forEach(item => {
+      const val = map.get(item.operation_type) || 0;
+      map.set(item.operation_type, val + item.total_tokens_in + item.total_tokens_out);
+    });
+    return Array.from(map.entries())
+      .sort((a, b) => b[1] - a[1])
+      .map(([label, value], index) => ({
+        label, value, color: COLORS[(index + 3) % COLORS.length]
+      }));
+  }, [summary]);
+
   return (
     <div className="animate-fade-in">
       <header className="page-header">
@@ -139,6 +171,13 @@ export default function TokenUsage() {
               <Clock size={24} />
             </div>
           </div>
+        </div>
+      )}
+
+      {!isLoading && summary.length > 0 && (
+        <div className="grid lg:grid-cols-2 gap-6 mb-8">
+          <PieChart title="Consumption by Model" data={modelChartData} />
+          <PieChart title="Consumption by Operation" data={operationChartData} />
         </div>
       )}
 
