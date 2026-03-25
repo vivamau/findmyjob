@@ -16,14 +16,22 @@ export default function PieChart({ data, title }: PieChartProps) {
           <div className="relative w-48 h-48 flex-shrink-0">
             <svg viewBox="0 0 100 100" className="w-full h-full">
               {data.map((item, index) => {
-                const startAngle = data.slice(0, index).reduce((sum, i) => sum + i.value, 0) / total * 360;
-                const endAngle = data.slice(0, index + 1).reduce((sum, i) => sum + i.value, 0) / total * 360;
-                const x1 = 50 + 48 * Math.cos((startAngle * Math.PI) / 180);
-                const y1 = 50 + 48 * Math.sin((startAngle * Math.PI) / 180);
-                const x2 = 50 + 48 * Math.cos((endAngle * Math.PI) / 180);
-                const y2 = 50 + 48 * Math.sin((endAngle * Math.PI) / 180);
-                const largeArcFlag = endAngle - startAngle <= 180 ? 1 : 0;
-                const pathData = `M 50 50 L ${x1} ${y1} A 48 48 L ${x2} ${y2} Z`;
+                const startAngle = (data.slice(0, index).reduce((sum, i) => sum + i.value, 0) / total) * 360;
+                const endAngle = (data.slice(0, index + 1).reduce((sum, i) => sum + i.value, 0) / total) * 360;
+                
+                const startRad = (startAngle - 90) * (Math.PI / 180);
+                const endRad = (endAngle - 90) * (Math.PI / 180);
+                
+                const x1 = 50 + 48 * Math.cos(startRad);
+                const y1 = 50 + 48 * Math.sin(startRad);
+                const x2 = 50 + 48 * Math.cos(endRad);
+                const y2 = 50 + 48 * Math.sin(endRad);
+                
+                const largeArcFlag = endAngle - startAngle <= 180 ? 0 : 1;
+                
+                const pathData = item.value === total
+                  ? 'M 50 2 A 48 48 0 1 1 49.9 2 Z'
+                  : `M 50 50 L ${x1} ${y1} A 48 48 0 ${largeArcFlag} 1 ${x2} ${y2} Z`;
 
                 return (
                   <path
