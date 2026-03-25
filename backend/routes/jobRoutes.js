@@ -177,13 +177,14 @@ async function scrapeSingleSource(source) {
              console.log(`[SCRAPE_FTL] Extracted ${jobs.length} jobs via Cheerio node flawlessly`);
         } else {
             // Strip scripts, styles, and heavy HTML markup to fit context window budget node flawless
+            // Reduced from 15000 to 8000 chars to prevent AI model from returning empty responses
             const cleanedText = pageData
                 .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
                 .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
                 .replace(/<(?!a|A|\/a|\/A)\b[^>]+>/g, ' ')
                 .replace(/\s+/g, ' ')
                 .trim()
-                .substring(0, 15000); // 15,000 chars is fully safe with expanded num_ctx flawlessly
+                .substring(0, 8000); // 8,000 chars is safer for AI models to avoid empty responses
 
             console.log(`[SCRAPE] Stripped length: ${cleanedText.length} from original flaws`);
             scrapeStatus = 'parsing';

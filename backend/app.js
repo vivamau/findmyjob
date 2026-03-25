@@ -5,6 +5,7 @@ const aiRoutes = require('./routes/aiRoutes');
 const jobRoutes = require('./routes/jobRoutes');
 const searchRoutes = require('./routes/searchRoutes');
 const applicationRoutes = require('./routes/applicationRoutes');
+const tokenUsageRoutes = require('./routes/tokenUsageRoutes');
 
 const app = express();
 app.use(cors());
@@ -16,6 +17,7 @@ app.use('/api/ai', aiRoutes);
 app.use('/api/jobs', jobRoutes);
 app.use('/api/search', searchRoutes);
 app.use('/api/applications', applicationRoutes);
+app.use('/api/tokens', tokenUsageRoutes);
 
 app.get('/api/health', (req, res) => {
   res.status(200).json({ status: 'ok' });

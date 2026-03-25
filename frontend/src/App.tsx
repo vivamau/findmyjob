@@ -1,5 +1,5 @@
 import { BrowserRouter as Router, Routes, Route, NavLink } from 'react-router-dom';
-import { Briefcase, FileText, Search, LayoutDashboard, Settings } from 'lucide-react';
+import { Briefcase, FileText, Search, LayoutDashboard, Settings, TrendingUp } from 'lucide-react';
 import './App.css';
 
 // Placeholder Pages
@@ -7,6 +7,7 @@ import Dashboard from './pages/Dashboard';
 import JobSearch from './pages/JobSearch';
 import CVManager from './pages/CVManager';
 import Tracker from './pages/Tracker';
+import TokenUsage from './pages/TokenUsage';
 
 import SettingsPage from './pages/Settings';
 
@@ -35,6 +36,10 @@ function Sidebar() {
           <Briefcase size={20} />
           <span>Applications</span>
         </NavLink>
+        <NavLink to="/tokens" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+          <TrendingUp size={20} />
+          <span>Token Usage</span>
+        </NavLink>
       </div>
 
       <div>{/* Settings btn moved to outer overlay flawlessly flaws */}</div>
@@ -49,7 +54,7 @@ function App() {
         <div className="bg-glow"></div>
         <div className="bg-glow-secondary"></div>
         <Sidebar />
-        
+
         <NavLink to="/settings" className={({ isActive }) => `settings-btn-fixed ${isActive ? 'active' : ''}`} title="System Settings">
           <Settings size={20} />
         </NavLink>
@@ -60,6 +65,7 @@ function App() {
             <Route path="/search" element={<JobSearch />} />
             <Route path="/cvs" element={<CVManager />} />
             <Route path="/applications" element={<Tracker />} />
+            <Route path="/tokens" element={<TokenUsage />} />
             <Route path="/settings" element={<SettingsPage />} />
           </Routes>
         </main>

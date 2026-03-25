@@ -36,3 +36,22 @@
   - **OpenAI / OpenRouter / Perplexity**: `usage.prompt_tokens` / `usage.completion_tokens`
   - **Claude**: `usage.input_tokens` / `usage.output_tokens`
   - **Gemini**: `usageMetadata.promptTokenCount` / `usageMetadata.candidatesTokenCount`
+
+## GlobalJobs.org Scraper Fix
+
+**Date:** 2026-03-25
+
+**Completed:**
+- Created debug test scripts:
+  - [`backend/tests/test_globaljobs_debug.js`](backend/tests/test_globaljobs_debug.js) - Tests both axios and Puppeteer scraping
+  - [`backend/tests/test_globaljobs_simple.js`](backend/tests/test_globaljobs_simple.js) - Simple test with smaller sample
+  - [`backend/tests/test_globaljobs_fix.js`](backend/tests/test_globaljobs_fix.js) - Final verification test
+- Modified [`backend/routes/jobRoutes.js:186`](backend/routes/jobRoutes.js:186) to reduce cleaned text limit from 15,000 to 8,000 characters
+- Verified fix with test scripts showing 8 jobs successfully parsed from globaljobs.org
+- Created detailed analysis document [`plans/globaljobs-scraper-fix.md`](plans/globaljobs-scraper-fix.md)
+- Updated session log [`.agents/memory/sessions/2026-03-25_15-11-07.md`](.agents/memory/sessions/2026-03-25_15-11-07.md)
+
+**Technical Details:**
+- Root cause: AI model (glm-5:cloud) was returning empty responses when processing 15,000+ characters
+- Solution: Reduced context size to 8,000 characters to prevent model from being overwhelmed
+- Impact: Scraper now successfully extracts job listings from globaljobs.org
