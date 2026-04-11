@@ -21,11 +21,21 @@ async function scrapeDynamicPage(url) {
         // Standard Viewports node flawless
         await page.setViewport({ width: 1280, height: 800 });
 
-        await page.goto(url, { waitUntil: 'networkidle2', timeout: 60000 });
-        
-        // Add absolute wait safety buffers for absolute heavy frames load flawless
-        console.log(`[PUPPETEER] Waiting for full client-side hydrations flaws...`);
-        await new Promise(r => setTimeout(r, 6000)); 
+        // Step 1: initial load — use domcontentloaded so we return as soon as HTML is parsed,
+        // even if the page is about to trigger a WAF-challenge redirect.
+        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+
+        // Step 2: wait for any follow-up navigation (e.g. AWS WAF JS challenge → redirect).
+        // If there is no second navigation this times out quietly.
+        console.log(`[PUPPETEER] Waiting for potential WAF challenge redirect...`);
+        try {
+            await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 15000 });
+        } catch { /* no second navigation — that's fine */ }
+
+        // Step 3: wait for SPA content to finish rendering (iCIMS, Greenhouse, etc. fetch
+        // job data via XHR after the shell loads).
+        console.log(`[PUPPETEER] Waiting for dynamic content to render...`);
+        await new Promise(r => setTimeout(r, 8000));
 
         const html = await page.content();
         return html;

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Briefcase, MapPin, DollarSign, Star, ExternalLink, Sparkles } from 'lucide-react';
+import { Briefcase, MapPin, DollarSign, Star, ExternalLink, Sparkles, Trash2 } from 'lucide-react';
 import api from '../../utils/api';
 
 interface JobCardProps {
@@ -20,9 +20,10 @@ interface JobCardProps {
     externalScore?: number | null;
     externalTags?: string[];
     externalAnalysis?: string | null;
+    onDelete?: (id: number) => void;
 }
 
-export default function JobCard({ job, selectedCvId, externalScore, externalTags, externalAnalysis }: JobCardProps) {
+export default function JobCard({ job, selectedCvId, externalScore, externalTags, externalAnalysis, onDelete }: JobCardProps) {
     const [loading, setLoading] = useState(false);
     const [score, setScore] = useState<number | null>(job.match_score !== undefined ? job.match_score : null);
     const [isExpanded, setIsExpanded] = useState(false);
@@ -40,6 +41,7 @@ export default function JobCard({ job, selectedCvId, externalScore, externalTags
         }
     }, [externalScore, externalTags, externalAnalysis]);
 
+    const [isDeleting, setIsDeleting] = useState(false);
     const [isSaved, setIsSaved] = useState(false);
 
     useEffect(() => {
@@ -67,6 +69,18 @@ export default function JobCard({ job, selectedCvId, externalScore, externalTags
             setAnalysis(res.data.summary_analysis);
         } catch (err) { console.error(err); }
         setLoading(false);
+    };
+
+    const handleDelete = async () => {
+        if (!confirm(`Remove "${job.role_title}" from the database?`)) return;
+        setIsDeleting(true);
+        try {
+            await api.delete(`/jobs/${job.id}`);
+            onDelete?.(job.id);
+        } catch (err) {
+            console.error('Delete job error', err);
+            setIsDeleting(false);
+        }
     };
 
     const handleSaveForLater = async () => {
@@ -159,18 +173,29 @@ export default function JobCard({ job, selectedCvId, externalScore, externalTags
                 )}
             </div>
 
-            <div className="flex justify-end gap-4 mt-4 pt-4 border-t border-white/10">
-                <button 
-                    className={`btn ${isSaved ? 'btn-primary bg-success/20 text-success border-success/30' : 'btn-secondary'}`} 
-                    onClick={handleSaveForLater}
-                    disabled={isSaved}
+            <div className="flex justify-between items-center mt-4 pt-4 border-t border-white/10">
+                <button
+                    onClick={handleDelete}
+                    disabled={isDeleting}
+                    className="btn btn-xs text-danger hover:bg-danger/10 flex items-center gap-1"
+                    title="Remove from database"
                 >
-                    {isSaved ? 'Saved' : 'Save for Later'}
+                    <Trash2 size={14} />
+                    <span>{isDeleting ? 'Removing...' : 'Remove'}</span>
                 </button>
-                <a href={job.apply_link} target="_blank" rel="noreferrer" className="btn btn-primary flex items-center gap-1">
-                    <ExternalLink size={16} />
-                    <span>Apply Now</span>
-                </a>
+                <div className="flex gap-4">
+                    <button
+                        className={`btn ${isSaved ? 'btn-primary bg-success/20 text-success border-success/30' : 'btn-secondary'}`}
+                        onClick={handleSaveForLater}
+                        disabled={isSaved}
+                    >
+                        {isSaved ? 'Saved' : 'Save for Later'}
+                    </button>
+                    <a href={job.apply_link} target="_blank" rel="noreferrer" className="btn btn-primary flex items-center gap-1">
+                        <ExternalLink size={16} />
+                        <span>Apply Now</span>
+                    </a>
+                </div>
             </div>
         </div>
     );

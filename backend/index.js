@@ -2,12 +2,14 @@ const app = require('./app');
 const runMigrations = require('./scripts/run_migrations');
 const seedUserRoles = require('./scripts/seed_userroles');
 const seedUsers = require('./scripts/seed_users');
+const { recoverStaleTasks } = require('./services/taskService');
 
 const PORT = process.env.PORT || 3000;
 
 async function start() {
     try {
         await runMigrations();
+        await recoverStaleTasks();
         await seedUserRoles();
         await seedUsers();
         // console.log("Database initialized successfully");

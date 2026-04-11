@@ -2,6 +2,8 @@ import { useState, useRef, useEffect } from 'react';
 import api from '../utils/api';
 import CustomDropdown from './components/CustomDropdown';
 import { UploadCloud, FileText, Edit3, Trash2, Plus, ArrowRight, Loader2, GraduationCap, Globe, Cpu } from 'lucide-react';
+import { useTaskContext } from '../context/TaskContext';
+import type { TaskType } from '../context/TaskContext';
 
 const formatDate = (dateString: string, includeTime = false) => {
     if (!dateString) return '';
@@ -23,6 +25,7 @@ const formatDate = (dateString: string, includeTime = false) => {
 };
 
 export default function CVManager() {
+  const { startTask, failTask, trackBackendTask } = useTaskContext();
   const [activeTab, setActiveTab] = useState('list'); // 'list' or 'upload'
   const [cvs, setCvs] = useState<any[]>([]);
   const [isLoadingCvs, setIsLoadingCvs] = useState(true);
@@ -111,31 +114,48 @@ export default function CVManager() {
   }, [selectedCv]);
 
   const handleAiParse = async (cvId: number) => {
+      const cvName = selectedCv?.title || `CV #${cvId}`;
+      const localTaskId = startTask('cv-parse' as TaskType, `Parsing "${cvName}"`);
       setIsParsing(true);
       setParseTime(0);
-      const interval = setInterval(() => {
-          setParseTime(prev => prev + 1);
-      }, 1000);
+      const interval = setInterval(() => setParseTime(prev => prev + 1), 1000);
 
       try {
           const [pId, modelName] = selectedModel.split('|');
           const response = await api.post(`/cv/${cvId}/parse`, { model: modelName || selectedModel, provider_id: pId });
-          
-          const [exp, edu, lang] = await Promise.all([
-              api.get(`/cv/${cvId}/experiences`),
-              api.get(`/cv/${cvId}/educations`),
-              api.get(`/cv/${cvId}/languages`)
-          ]);
-          setExperiences(exp.data);
-          setEducations(edu.data);
-          setLanguages(lang.data);
-          setSkills(response.data.skills || []);
-           const now = new Date().toISOString();
-           setCvs(prev => prev.map(c => c.id === cvId ? { ...c, last_parse_at: now, parse_model: selectedModel, skills: JSON.stringify(response.data.skills || []) } : c));
-           setSelectedCv((prev: any) => prev && prev.id === cvId ? { ...prev, last_parse_at: now, parse_model: selectedModel, skills: JSON.stringify(response.data.skills || []) } : prev);
+          const backendTaskId = response.data.task_id;
+
+          // Re-fetch parsed data once the backend task completes
+          const refetch = async () => {
+              const [exp, edu, lang, resumeRow] = await Promise.all([
+                  api.get(`/cv/${cvId}/experiences`),
+                  api.get(`/cv/${cvId}/educations`),
+                  api.get(`/cv/${cvId}/languages`),
+                  api.get(`/cv/${cvId}`)
+              ]);
+              setExperiences(exp.data);
+              setEducations(edu.data);
+              setLanguages(lang.data);
+              const skillsParsed = resumeRow.data.skills ? JSON.parse(resumeRow.data.skills) : [];
+              setSkills(skillsParsed);
+              const now = new Date().toISOString();
+              setCvs(prev => prev.map(c => c.id === cvId ? { ...c, last_parse_at: now, parse_model: selectedModel, skills: resumeRow.data.skills || '[]' } : c));
+              setSelectedCv((prev: any) => prev && prev.id === cvId ? { ...prev, last_parse_at: now, parse_model: selectedModel, skills: resumeRow.data.skills || '[]' } : prev);
+              setIsParsing(false);
+              clearInterval(interval);
+          };
+
+          trackBackendTask(localTaskId, backendTaskId, async () => {
+              await refetch();
+          }, () => {
+              setIsParsing(false);
+              clearInterval(interval);
+          });
+
       } catch (err: any) {
-          alert(`AI parsing failed: ${err.response?.data?.error || err.message}`);
-      } finally {
+          const msg = err.response?.data?.error || err.message;
+          failTask(localTaskId, msg);
+          alert(`AI parsing failed: ${msg}`);
           setIsParsing(false);
           clearInterval(interval);
       }

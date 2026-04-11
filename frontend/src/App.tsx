@@ -10,6 +10,8 @@ import Tracker from './pages/Tracker';
 import TokenUsage from './pages/TokenUsage';
 
 import SettingsPage from './pages/Settings';
+import { TaskProvider } from './context/TaskContext';
+import TaskStatusPanel from './components/TaskStatusPanel';
 
 function Sidebar() {
   return (
@@ -49,28 +51,32 @@ function Sidebar() {
 
 function App() {
   return (
-    <Router>
-      <div className="app-container">
-        <div className="bg-glow"></div>
-        <div className="bg-glow-secondary"></div>
-        <Sidebar />
+    <TaskProvider>
+      <Router>
+        <div className="app-container">
+          <div className="bg-glow"></div>
+          <div className="bg-glow-secondary"></div>
+          <Sidebar />
 
-        <NavLink to="/settings" className={({ isActive }) => `settings-btn-fixed ${isActive ? 'active' : ''}`} title="System Settings">
-          <Settings size={20} />
-        </NavLink>
-        
-        <main className="main-content">
-          <Routes>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/search" element={<JobSearch />} />
-            <Route path="/cvs" element={<CVManager />} />
-            <Route path="/applications" element={<Tracker />} />
-            <Route path="/tokens" element={<TokenUsage />} />
-            <Route path="/settings" element={<SettingsPage />} />
-          </Routes>
-        </main>
-      </div>
-    </Router>
+          <NavLink to="/settings" className={({ isActive }) => `settings-btn-fixed ${isActive ? 'active' : ''}`} title="System Settings">
+            <Settings size={20} />
+          </NavLink>
+
+          <TaskStatusPanel />
+
+          <main className="main-content">
+            <Routes>
+              <Route path="/" element={<Dashboard />} />
+              <Route path="/search" element={<JobSearch />} />
+              <Route path="/cvs" element={<CVManager />} />
+              <Route path="/applications" element={<Tracker />} />
+              <Route path="/tokens" element={<TokenUsage />} />
+              <Route path="/settings" element={<SettingsPage />} />
+            </Routes>
+          </main>
+        </div>
+      </Router>
+    </TaskProvider>
   );
 }
 

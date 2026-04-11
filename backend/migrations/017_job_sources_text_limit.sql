@@ -1,0 +1,1 @@
+ALTER TABLE JobSources ADD COLUMN scrape_text_limit INTEGER NOT NULL DEFAULT 8000;

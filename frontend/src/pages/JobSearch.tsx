@@ -7,8 +7,11 @@ import JobCard from './components/JobCard';
 import CustomDropdown from './components/CustomDropdown';
 import Pagination from './components/Pagination';
 import SearchHeader from './components/SearchHeader';
+import { useTaskContext } from '../context/TaskContext';
+import type { TaskType } from '../context/TaskContext';
 
 export default function JobSearch() {
+  const { startTask, failTask, trackBackendTask } = useTaskContext();
   const location = useLocation();
   const [minScore, setMinScore] = useState<number | null>(location.state?.minScore ?? null);
   const [query, setQuery] = useState('');
@@ -25,6 +28,13 @@ export default function JobSearch() {
   const [batchScores, setBatchScores] = useState<Record<string, { match_score: number, matching_tags: string[], summary_analysis: string }>>({});
   const [isBatchRunning, setIsBatchRunning] = useState(false);
   const autoRunRef = useRef<string>(''); // tracks last "cvId|jobCount" so we don't re-run duplicates
+  const [autoRunEnabled, setAutoRunEnabled] = useState<boolean>(() => {
+      const stored = localStorage.getItem('jobsearch_autorun');
+      return stored === null ? true : stored === 'true';
+  });
+
+  // Source filter
+  const [selectedSources, setSelectedSources] = useState<Set<number>>(new Set());
 
   // Sort state
   const [sortBy, setSortBy] = useState<'score' | 'date' | 'title'>('score');
@@ -35,6 +45,7 @@ export default function JobSearch() {
 
   useEffect(() => {
       setCurrentPage(1);
+      setSelectedSources(new Set());
   }, [query, selectedCvId]);
 
   // Clear batch scores and reset auto-run ref when CV changes
@@ -79,7 +90,7 @@ export default function JobSearch() {
 
   // Auto-run batch match for ALL jobs whenever the job list or selected CV changes
   useEffect(() => {
-      if (!selectedCvId || jobs.length === 0) return;
+      if (!autoRunEnabled || !selectedCvId || jobs.length === 0) return;
       const key = `${selectedCvId}|${jobs.length}`;
       if (autoRunRef.current === key) return; // already fired for this combination
       autoRunRef.current = key;
@@ -93,15 +104,18 @@ export default function JobSearch() {
                   resume_id: parseInt(selectedCvId),
                   job_ids
               });
-              if (res.data.results) setBatchScores(res.data.results);
-          } catch (err) {
+              const backendTaskId = res.data.task_id;
+              const localTaskId = startTask('batch-match' as TaskType, `Analyzing ${job_ids.length} jobs`);
+              trackBackendTask(localTaskId, backendTaskId, (result) => {
+                  if (result) setBatchScores(result);
+              }, () => setIsBatchRunning(false));
+          } catch (err: any) {
               console.error('Auto batch match error:', err);
-          } finally {
               setIsBatchRunning(false);
           }
       };
       runAutoMatch();
-  }, [jobs, selectedCvId]);
+  }, [jobs, selectedCvId, autoRunEnabled]);
 
   const handleSearchSubmit = async () => {
       if (!isSemantic || !query.trim()) {
@@ -123,6 +137,30 @@ export default function JobSearch() {
       }
   };
 
+  // Unique sources present in the loaded job list
+  const availableSources = Array.from(
+      new Map(
+          jobs
+              .filter(j => j.source_id)
+              .map(j => {
+                  let name = j.source_name;
+                  if (!name && j.source_url) {
+                      try { name = new URL(j.source_url).hostname.replace(/^www\./, ''); } catch { name = null; }
+                  }
+                  return [j.source_id, { id: j.source_id, name: name || `Source ${j.source_id}` }];
+              })
+      ).values()
+  ).sort((a, b) => a.name.localeCompare(b.name));
+
+  const toggleSource = (id: number) => {
+      setSelectedSources(prev => {
+          const next = new Set(prev);
+          next.has(id) ? next.delete(id) : next.add(id);
+          return next;
+      });
+      setCurrentPage(1);
+  };
+
   const baseFilteredJobs = isSemantic && semanticResults !== null
       ? semanticResults.map(sr => {
             const match = jobs.find(j => j.id.toString() === sr.job_id.toString());
@@ -133,12 +171,16 @@ export default function JobSearch() {
             (j.company_name || '').toLowerCase().includes(query.toLowerCase())
         );
 
+  const sourceFilteredJobs = selectedSources.size > 0
+      ? baseFilteredJobs.filter(j => selectedSources.has(j.source_id))
+      : baseFilteredJobs;
+
   const filteredJobs = minScore !== null
-      ? baseFilteredJobs.filter(j => {
+      ? sourceFilteredJobs.filter(j => {
             const score = batchScores[String(j.id)]?.match_score ?? j.match_score ?? 0;
             return score >= minScore;
         })
-      : baseFilteredJobs;
+      : sourceFilteredJobs;
 
   const sortedJobs = [...filteredJobs].sort((a: any, b: any) => {
       let valA: any = '';
@@ -224,12 +266,14 @@ export default function JobSearch() {
               job_ids,
               force: true
           });
-          if (res.data.results) {
-              setBatchScores(prev => ({ ...prev, ...res.data.results }));
-          }
-      } catch (err) {
+          const backendTaskId = res.data.task_id;
+          const localTaskId = startTask('batch-match' as TaskType, `Analyzing ${job_ids.length} jobs`);
+          trackBackendTask(localTaskId, backendTaskId, (result) => {
+              if (result) setBatchScores(prev => ({ ...prev, ...result }));
+          }, () => setIsBatchRunning(false));
+      } catch (err: any) {
           console.error("Batch match error", err);
-      } finally {
+          failTask('unknown', err.message || 'Batch match failed');
           setIsBatchRunning(false);
       }
   };
@@ -261,6 +305,20 @@ export default function JobSearch() {
             isOpen={isDropdownOpen} 
             setIsOpen={setIsDropdownOpen} 
           />
+          {selectedCvId && (
+              <label className="flex items-center gap-1.5 cursor-pointer select-none text-sm text-secondary">
+                  <input
+                      type="checkbox"
+                      checked={autoRunEnabled}
+                      onChange={e => {
+                          setAutoRunEnabled(e.target.checked);
+                          localStorage.setItem('jobsearch_autorun', String(e.target.checked));
+                      }}
+                      className="accent-accent-secondary w-3.5 h-3.5"
+                  />
+                  Auto-analyze
+              </label>
+          )}
           {selectedCvId && currentJobs.length > 0 && (
               <div className="flex gap-2">
                   <button
@@ -291,7 +349,40 @@ export default function JobSearch() {
         </div>
       </div>
 
-      <div className="flex justify-between items-center mb-4 mt-2">
+      <div className="flex flex-wrap items-center gap-2 mb-4 mt-2">
+          {availableSources.map(src => {
+              const active = selectedSources.has(src.id);
+              return (
+                  <button
+                      key={src.id}
+                      onClick={() => toggleSource(src.id)}
+                      className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border transition-all"
+                      style={active ? {
+                          background: 'rgba(124,58,237,0.15)',
+                          borderColor: 'rgba(124,58,237,0.5)',
+                          color: 'var(--accent-primary)',
+                      } : {
+                          background: 'rgba(255,255,255,0.04)',
+                          borderColor: 'rgba(255,255,255,0.08)',
+                          color: 'var(--text-secondary)',
+                      }}
+                  >
+                      {src.name}
+                      {active && <X size={10} />}
+                  </button>
+              );
+          })}
+          {selectedSources.size > 0 && (
+              <button
+                  onClick={() => setSelectedSources(new Set())}
+                  className="text-xs text-secondary hover:text-primary transition-colors underline underline-offset-2"
+              >
+                  Clear
+              </button>
+          )}
+      </div>
+
+      <div className="flex justify-between items-center mb-4">
         <div>
           {minScore !== null && (
             <div className="flex items-center gap-1.5 bg-accent-secondary/10 border border-accent-secondary/20 text-accent-secondary px-2.5 py-1 rounded-full text-xs font-semibold backdrop-blur-sm shadow-[0_0_15px_rgba(139,92,246,0.1)]">
@@ -345,6 +436,7 @@ export default function JobSearch() {
                             externalScore={batchResult?.match_score ?? undefined}
                             externalTags={batchResult?.matching_tags}
                             externalAnalysis={batchResult?.summary_analysis}
+                            onDelete={(id) => setJobs(prev => prev.filter(j => j.id !== id))}
                         />
                     </div>
                 );

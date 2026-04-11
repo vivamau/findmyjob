@@ -1,9 +1,24 @@
 import { useState, useEffect } from 'react';
-import { Save, CheckCircle, Info, Globe, Plus, Trash2, Play, Loader2, Cpu } from 'lucide-react';
+import { Save, CheckCircle, Info, Globe, Plus, Trash2, Play, Loader2, Cpu, Clock } from 'lucide-react';
 import api from '../utils/api';
 import CustomDropdown from './components/CustomDropdown';
+import { useTaskContext } from '../context/TaskContext';
+import type { TaskType } from '../context/TaskContext';
+
+function timeAgo(dateStr: string | null): string {
+    if (!dateStr) return 'Never';
+    const diff = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000);
+    if (diff < 60)   return 'Just now';
+    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+    const days = Math.floor(diff / 86400);
+    if (days === 1)  return 'Yesterday';
+    if (days < 7)    return `${days} days ago`;
+    return new Date(dateStr).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+}
 
 export default function Settings() {
+    const { startTask, trackBackendTask } = useTaskContext();
     const [providers, setProviders] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [activeProvider, setActiveProvider] = useState<string>('');
@@ -16,6 +31,7 @@ export default function Settings() {
     const [newName, setNewName] = useState('');
     const [newDescription, setNewDescription] = useState('');
     const [newInterval, setNewInterval] = useState(1);
+    const [newTextLimit, setNewTextLimit] = useState(8000);
     const [activeTab, setActiveTab] = useState<'ai' | 'scrapers' | 'prompts'>('ai');
     const [prompts, setPrompts] = useState<any[]>([]);
     const [editingPromptKey, setEditingPromptKey] = useState<string | null>(null);
@@ -29,6 +45,7 @@ export default function Settings() {
     const [editName, setEditName] = useState('');
     const [editDescription, setEditDescription] = useState('');
     const [editInterval, setEditInterval] = useState(1);
+    const [editTextLimit, setEditTextLimit] = useState(8000);
     const [isOllamaDropdownOpen, setIsOllamaDropdownOpen] = useState(false);
 
     useEffect(() => {
@@ -68,16 +85,18 @@ export default function Settings() {
         if (!newUrl.trim()) return;
         setSaveSuccess('');
         try {
-            await api.post('/jobs/sources', { 
-                url: newUrl, 
+            await api.post('/jobs/sources', {
+                url: newUrl,
                 scrape_interval_days: newInterval,
                 name: newName,
-                description: newDescription
+                description: newDescription,
+                scrape_text_limit: newTextLimit
             });
             setNewUrl('');
             setNewName('');
             setNewDescription('');
             setNewInterval(1);
+            setNewTextLimit(8000);
             setSaveSuccess('Job source added successfully!');
             fetchJobSources();
         } catch (err: any) { 
@@ -95,11 +114,12 @@ export default function Settings() {
 
     const handleUpdateSource = async (id: number) => {
         try {
-            await api.put(`/jobs/sources/${id}`, { 
-                url: editUrl, 
+            await api.put(`/jobs/sources/${id}`, {
+                url: editUrl,
                 scrape_interval_days: editInterval,
                 name: editName,
-                description: editDescription
+                description: editDescription,
+                scrape_text_limit: editTextLimit
             });
             setEditingSourceId(null);
             setSaveSuccess('Job source updated successfully!');
@@ -108,50 +128,59 @@ export default function Settings() {
     };
 
     const handleRunScrape = async () => {
-        setSaveSuccess('Scraping running... Please wait.');
+        setSaveSuccess('Scraping started...');
         setScraping(true);
         setStatusLabel('Connecting...');
-
-        const poll = setInterval(async () => {
-            try {
-                const res = await api.get('/jobs/scrape-status');
-                if (res.data.status === 'scraping') setStatusLabel('Scraping...');
-                else if (res.data.status === 'parsing') setStatusLabel('Parsing...');
-                else if (res.data.status === 'saving') setStatusLabel('Saving...');
-            } catch (err) {}
-        }, 1000);
-
         try {
-            await api.post('/jobs/scrape');
-            setSaveSuccess('Scraped nodes completed flawlessly');
-            fetchJobSources(); // Refresh list to load content flawlessly Green
+            const res = await api.post('/jobs/scrape');
+            const backendTaskId = res.data.task_id;
+            const localTaskId = startTask('scrape' as TaskType, 'Scraping all job sources');
+            trackBackendTask(localTaskId, backendTaskId, async () => {
+                fetchJobSources();
+                setScraping(false);
+                setStatusLabel('Run Scraper');
+                setSaveSuccess('Scraping completed');
+            });
+            // Also stop local spinner when done
+            const poll = setInterval(async () => {
+                try {
+                    const status = await api.get(`/tasks/${backendTaskId}`);
+                    if (status.data.detail) setStatusLabel(status.data.detail);
+                    if (status.data.status !== 'running') {
+                        clearInterval(poll);
+                        setScraping(false);
+                        setStatusLabel('Run Scraper');
+                    }
+                } catch { clearInterval(poll); setScraping(false); setStatusLabel('Run Scraper'); }
+            }, 1500);
         } catch (err: any) {
             console.error(err);
-            setSaveSuccess('Scraping encountered anomalies node flawless');
-        } finally {
-            clearInterval(poll);
+            setSaveSuccess('Failed to start scraping');
             setScraping(false);
             setStatusLabel('Run Scraper');
         }
     };
 
     const handleRunSourceScrape = async (sourceId: number) => {
-        setSaveSuccess('Scraping running... Please wait.');
+        const source = jobSources.find((s: any) => s.id === sourceId);
+        const label = source?.name || source?.url || `Source #${sourceId}`;
+        setSaveSuccess(`Scraping "${label}"...`);
         setScrapingSources(prev => new Set(prev).add(sourceId));
-
         try {
-            await api.post(`/jobs/sources/${sourceId}/scrape`);
-            setSaveSuccess(`Scraped source ${sourceId} completed flawlessly`);
-            fetchJobSources(); // Refresh list to load content flawlessly Green
+            const res = await api.post(`/jobs/sources/${sourceId}/scrape`);
+            if (res.data.task_id) {
+                const localTaskId = startTask('scrape' as TaskType, `Scraping "${label}"`);
+                const done = () => {
+                    fetchJobSources();
+                    setSaveSuccess(`"${label}" scraped`);
+                    setScrapingSources(prev => { const s = new Set(prev); s.delete(sourceId); return s; });
+                };
+                trackBackendTask(localTaskId, res.data.task_id, async () => { fetchJobSources(); }, done);
+            }
         } catch (err: any) {
             console.error(err);
-            setSaveSuccess(`Scraping source ${sourceId} encountered anomalies node flawless`);
-        } finally {
-            setScrapingSources(prev => {
-                const newSet = new Set(prev);
-                newSet.delete(sourceId);
-                return newSet;
-            });
+            setSaveSuccess(`Failed to scrape "${label}"`);
+            setScrapingSources(prev => { const s = new Set(prev); s.delete(sourceId); return s; });
         }
     };
 
@@ -347,15 +376,26 @@ export default function Settings() {
                             onChange={e => setNewDescription(e.target.value)} 
                             placeholder="Description metadata flaws flaws"
                         />
-                        <div className="flex items-center gap-1 bg-white/5 px-3 rounded-lg border border-white/5">
-                            <input 
-                                type="number" 
-                                min="1" 
-                                className="bg-transparent text-sm w-8 text-center focus:outline-none" 
-                                value={newInterval} 
-                                onChange={e => setNewInterval(Number(e.target.value))} 
+                        <div className="flex items-center gap-1 bg-white/5 px-3 rounded-lg border border-white/5" title="Scrape interval in days">
+                            <input
+                                type="number"
+                                min="1"
+                                className="bg-transparent text-sm w-8 text-center focus:outline-none"
+                                value={newInterval}
+                                onChange={e => setNewInterval(Number(e.target.value))}
                             />
                             <span className="text-xs text-secondary">d</span>
+                        </div>
+                        <div className="flex items-center gap-1 bg-white/5 px-3 rounded-lg border border-white/5" title="Max characters sent to AI for parsing">
+                            <input
+                                type="number"
+                                step="1000"
+                                min="1000"
+                                className="bg-transparent text-sm w-14 text-center focus:outline-none"
+                                value={newTextLimit}
+                                onChange={e => setNewTextLimit(Number(e.target.value))}
+                            />
+                            <span className="text-xs text-secondary">ch</span>
                         </div>
                         <button className="btn btn-primary flex items-center gap-1" onClick={handleAddSource}>
                             <Plus size={16} />
@@ -397,14 +437,25 @@ export default function Settings() {
                                             onChange={e => setEditDescription(e.target.value)} 
                                             placeholder="Description"
                                         />
-                                        <div className="flex items-center gap-1 bg-white/5 px-2 rounded-lg border border-white/5">
-                                            <input 
-                                                type="number" 
-                                                className="bg-transparent text-sm w-8 text-center focus:outline-none" 
-                                                value={editInterval} 
-                                                onChange={e => setEditInterval(Number(e.target.value))} 
+                                        <div className="flex items-center gap-1 bg-white/5 px-2 rounded-lg border border-white/5" title="Scrape interval in days">
+                                            <input
+                                                type="number"
+                                                className="bg-transparent text-sm w-8 text-center focus:outline-none"
+                                                value={editInterval}
+                                                onChange={e => setEditInterval(Number(e.target.value))}
                                             />
                                             <span className="text-xs text-secondary">d</span>
+                                        </div>
+                                        <div className="flex items-center gap-1 bg-white/5 px-2 rounded-lg border border-white/5" title="Max characters sent to AI for parsing">
+                                            <input
+                                                type="number"
+                                                step="1000"
+                                                min="1000"
+                                                className="bg-transparent text-sm w-14 text-center focus:outline-none"
+                                                value={editTextLimit}
+                                                onChange={e => setEditTextLimit(Number(e.target.value))}
+                                            />
+                                            <span className="text-xs text-secondary">ch</span>
                                         </div>
                                         <button className="btn btn-xs btn-primary px-3" onClick={() => handleUpdateSource(s.id)}>Save</button>
                                         <button className="btn btn-xs btn-secondary px-3" onClick={() => setEditingSourceId(null)}>Cancel</button>
@@ -419,7 +470,11 @@ export default function Settings() {
                                                  {s.url}
                                              </a>
                                              {s.description && <p className="text-xs text-white/60 mb-1">{s.description}</p>}
-                                             <span className="text-xs text-accent-tertiary">Interval: {s.scrape_interval_days || 1} d</span>
+                                             <span className="text-xs text-accent-tertiary">Interval: {s.scrape_interval_days || 1} d &nbsp;·&nbsp; Limit: {(s.scrape_text_limit || 8000).toLocaleString()} ch</span>
+                                             <span className="flex items-center gap-1 text-xs text-secondary mt-0.5">
+                                                 <Clock size={10} className={s.last_scraped_at ? 'text-secondary' : 'text-muted'} />
+                                                 {timeAgo(s.last_scraped_at)}
+                                             </span>
                                          </div>
                                         <div className="flex gap-2">
                                            <button
@@ -438,6 +493,7 @@ export default function Settings() {
                                                    setEditName(s.name || '');
                                                    setEditDescription(s.description || '');
                                                    setEditInterval(s.scrape_interval_days || 1);
+                                                   setEditTextLimit(s.scrape_text_limit || 8000);
                                                }}
                                            >
                                                Edit

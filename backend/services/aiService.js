@@ -2,6 +2,31 @@ const axios = require('axios');
 const { dbAsync } = require('../db');
 
 /**
+ * Extracts the first complete JSON object from a string by tracking brace depth.
+ * Safer than a greedy regex which can span across multiple objects or trailing text.
+ */
+function extractFirstJSON(text) {
+    const start = text.indexOf('{');
+    if (start === -1) return null;
+    let depth = 0;
+    let inString = false;
+    let escape = false;
+    for (let i = start; i < text.length; i++) {
+        const ch = text[i];
+        if (escape)              { escape = false; continue; }
+        if (ch === '\\' && inString) { escape = true; continue; }
+        if (ch === '"')          { inString = !inString; continue; }
+        if (inString)            continue;
+        if (ch === '{')          depth++;
+        else if (ch === '}') {
+            depth--;
+            if (depth === 0) return text.slice(start, i + 1);
+        }
+    }
+    return null;
+}
+
+/**
  * Fetches a prompt from the Database with a fallback.
  */
 async function getPrompt(key) {
@@ -160,15 +185,13 @@ async function parseJobListings(htmlText, model) {
 
         await logTokenUsage(selectedModel, 'parseJobListings', tokensIn, tokensOut, startTime);
 
-        // console.log(`=== RAW JOB RESPONSE ===\n${responseText}`);
-        
-        // Bulletproof Regex fallback to extract JSON string flawless setup
-        const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-        const jsonString = jsonMatch ? jsonMatch[0] : responseText.trim();
+        console.log(`[AI_PARSE] Raw response (first 800 chars): ${responseText.substring(0, 800)}`);
+
+        const jsonString = extractFirstJSON(responseText);
 
         if (!jsonString) {
-             console.log('[AI_PARSE] Empty response from Ollama flawlessly');
-             return [];
+            console.log('[AI_PARSE] No JSON object found in response');
+            return [];
         }
 
         const parsed = JSON.parse(jsonString);
@@ -195,19 +218,19 @@ async function parseJobListings(htmlText, model) {
  */
 async function parseCvWithModel(cvText, model, providerId = null) {
     let provider = 'ollama';
+    let jsonString = '';
     const startTime = new Date().toISOString();
     try {
         const promptTemplate = await getPrompt('cv_parser_model');
         const prompt = promptTemplate.replace('${cvText}', cvText);
 
-        const active = providerId 
+        const active = providerId
             ? await dbAsync.get('SELECT * FROM ProviderConfigs WHERE provider_id = ?', [providerId])
             : await dbAsync.get('SELECT * FROM ProviderConfigs WHERE is_active = 1');
-            
+
         provider = active ? active.provider_id : 'ollama';
         const apiKey = active ? active.api_key : '';
 
-        let jsonString = '';
         let tokensIn = 0, tokensOut = 0;
 
         if (provider === 'ollama') {
@@ -315,8 +338,9 @@ async function parseCvWithModel(cvText, model, providerId = null) {
         if (!jsonString) {
             throw new Error('Ollama returned an empty response');
         }
-        
-        const output = JSON.parse(jsonString);
+
+        const cleanJson = extractFirstJSON(jsonString) || jsonString;
+        const output = JSON.parse(cleanJson);
         
         // Handle objects with numeric keys representing a list [index]: { ... }
         if (!Array.isArray(output)) {
