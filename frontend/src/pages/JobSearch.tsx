@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useLocation } from 'react-router-dom';
-import { Sparkles, X } from 'lucide-react';
+import { Sparkles, X, Save } from 'lucide-react';
 import api from '../utils/api';
 import JobCard from './components/JobCard';
 import CustomDropdown from './components/CustomDropdown';
@@ -214,47 +214,95 @@ export default function JobSearch() {
       }, 50);
   };
 
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [showSyncModal, setShowSyncModal] = useState(false);
-  const [syncStats, setSyncStats] = useState<{ successCount: number; failCount: number } | null>(null);
+   const [isSyncing, setIsSyncing] = useState(false);
+   const [showSyncModal, setShowSyncModal] = useState(false);
+   const [syncStats, setSyncStats] = useState<{ successCount: number; failCount: number } | null>(null);
+   const [isExporting, setIsExporting] = useState(false);
 
-  const handleSyncVectors = async () => {
-       setIsSyncing(true);
-       try {
-           const res = await api.post('/search/sync-lancedb');
-           setSyncStats({ 
-               successCount: res.data.successCount || 0, 
-               failCount: res.data.failCount || 0 
-           });
-           setShowSyncModal(true);
-           if (selectedCvId) {
-               autoRunRef.current = ''; 
-               const jobsRes = await api.get('/jobs', { params: { resume_id: selectedCvId } });
-               const updatedJobs = jobsRes.data;
-               setJobs(updatedJobs);
+   const handleSyncVectors = async () => {
+        setIsSyncing(true);
+        try {
+            const res = await api.post('/search/sync-lancedb');
+            setSyncStats({ 
+                successCount: res.data.successCount || 0, 
+                failCount: res.data.failCount || 0 
+            });
+            setShowSyncModal(true);
+            if (selectedCvId) {
+                autoRunRef.current = ''; 
+                const jobsRes = await api.get('/jobs', { params: { resume_id: selectedCvId } });
+                const updatedJobs = jobsRes.data;
+                setJobs(updatedJobs);
 
-               const job_ids = updatedJobs.map((j: any) => j.id).filter(Boolean);
-               if (job_ids.length > 0) {
-                   try {
-                       await api.post('/ai/match-batch', {
-                           resume_id: parseInt(selectedCvId),
-                           job_ids,
-                           force: true
-                       });
-                       const freshRes = await api.get('/jobs', { params: { resume_id: selectedCvId } });
-                       setJobs(freshRes.data);
-                   } catch (batchErr) {
-                       console.error("Batch match failed following sync", batchErr);
-                   }
-               }
-           }
+                const job_ids = updatedJobs.map((j: any) => j.id).filter(Boolean);
+                if (job_ids.length > 0) {
+                    try {
+                        await api.post('/ai/match-batch', {
+                            resume_id: parseInt(selectedCvId),
+                            job_ids,
+                            force: true
+                        });
+                        const freshRes = await api.get('/jobs', { params: { resume_id: selectedCvId } });
+                        setJobs(freshRes.data);
+                    } catch (batchErr) {
+                        console.error("Batch match failed following sync", batchErr);
+                    }
+                }
+            }
 
-       } catch (err) {
-           console.error("Sync vectors error", err);
-       } finally {
-           setIsSyncing(false);
-       }
-  };
+        } catch (err) {
+            console.error("Sync vectors error", err);
+        } finally {
+            setIsSyncing(false);
+        }
+    };
+
+    const handleExportExcel = async () => {
+        if (!selectedCvId || currentJobs.length === 0) return;
+        
+        setIsExporting(true);
+        try {
+            // Prepare data for export
+            const exportData = currentJobs.map((job: any) => {
+                const batchResult = batchScores[String(job.id)];
+                return {
+                    'Job Title': job.role_title || '',
+                    'Company': job.company_name || '',
+                    'Location': job.location || '',
+                    'Apply Link': job.apply_link || '',
+                    'Match Score (%)': batchResult?.match_score ?? job.match_score ?? 0,
+                    'Matching Tags': batchResult?.matching_tags ? JSON.parse(batchResult.matching_tags).join(', ') : '',
+                    'Summary Analysis': batchResult?.summary_analysis || job.summary_analysis || ''
+                };
+            });
+
+            // Import xlsx here to avoid bundling issues if not used
+            const XLSX = await import('xlsx');
+            const worksheet = XLSX.utils.json_to_sheet(exportData);
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, 'Job Matches');
+            
+            // Generate buffer and trigger download
+            const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+            const blob = new Blob([excelBuffer], { type: 'application/octet-stream' });
+            const url = URL.createObjectURL(blob);
+            
+            // Create temporary link and trigger download
+            const tempLink = document.createElement('a');
+            tempLink.href = url;
+            tempLink.download = `job_matches_${new Date().toISOString().slice(0,10)}.xlsx`;
+            document.body.appendChild(tempLink);
+            tempLink.click();
+            document.body.removeChild(tempLink);
+            URL.revokeObjectURL(url);
+            
+        } catch (err) {
+            console.error("Excel export error", err);
+            alert("Failed to export Excel file. Please check console for details.");
+        } finally {
+            setIsExporting(false);
+        }
+    };
 
   const handleRunBatchMatch = async () => {
       if (!selectedCvId || currentJobs.length === 0) return;
@@ -319,33 +367,43 @@ export default function JobSearch() {
                   Auto-analyze
               </label>
           )}
-          {selectedCvId && currentJobs.length > 0 && (
-              <div className="flex gap-2">
-                  <button
-                      onClick={handleRunBatchMatch}
-                      disabled={isBatchRunning}
-                      className="btn btn-secondary flex items-center gap-2 text-sm"
-                      title={`Run AI match for all ${currentJobs.length} jobs on this page`}
-                  >
-                      <Sparkles size={14} className={isBatchRunning ? 'animate-spin text-accent-secondary' : 'text-accent-secondary'} />
-                      {isBatchRunning
-                          ? `Analyzing ${currentJobs.length} jobs...`
-                          : `AI Match All (${currentJobs.length})`}
-                  </button>
+           {selectedCvId && currentJobs.length > 0 && (
+               <div className="flex gap-2">
+                   <button
+                       onClick={handleRunBatchMatch}
+                       disabled={isBatchRunning}
+                       className="btn btn-secondary flex items-center gap-2 text-sm"
+                       title={`Run AI match for all ${currentJobs.length} jobs on this page`}
+                   >
+                       <Sparkles size={14} className={isBatchRunning ? 'animate-spin text-accent-secondary' : 'text-accent-secondary'} />
+                       {isBatchRunning
+                           ? `Analyzing ${currentJobs.length} jobs...`
+                           : `AI Match All (${currentJobs.length})`}
+                   </button>
 
-                  <button
-                      onClick={handleSyncVectors}
-                      disabled={isSyncing}
-                      className="btn btn-secondary flex items-center gap-2 text-sm"
-                      title="Force bulk sync for vectors listing flawlessly in LanceDB flaws"
-                  >
-                      <Sparkles size={14} className={isSyncing ? 'animate-spin text-accent-secondary' : 'text-accent-secondary'} />
-                      {isSyncing
-                          ? `Syncing...`
-                          : `Sync Match Index`}
-                  </button>
-              </div>
-          )}
+                   <button
+                       onClick={handleExportExcel}
+                       disabled={isExporting}
+                       className="btn btn-secondary flex items-center gap-2 text-sm"
+                       title="Export job matches to Excel"
+                   >
+                       <Save size={14} className={isExporting ? 'animate-spin text-accent-secondary' : 'text-accent-secondary'} />
+                       {isExporting ? 'Exporting...' : 'Export to Excel'}
+                   </button>
+
+                   <button
+                       onClick={handleSyncVectors}
+                       disabled={isSyncing}
+                       className="btn btn-secondary flex items-center gap-2 text-sm"
+                       title="Force bulk sync for vectors listing flawlessly in LanceDB flaws"
+                   >
+                       <Sparkles size={14} className={isSyncing ? 'animate-spin text-accent-secondary' : 'text-accent-secondary'} />
+                       {isSyncing
+                           ? `Syncing...`
+                           : `Sync Match Index`}
+                   </button>
+               </div>
+           )}
         </div>
       </div>
 
